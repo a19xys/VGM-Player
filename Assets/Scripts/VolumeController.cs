@@ -9,6 +9,7 @@ using UnityEngine.UI;
 public class VolumeController : MonoBehaviour {
 
     [Header("Refs")]
+    public SlidingMenuController selectionMenu;
     public Slider volumeSlider;
     public AudioSource audioSource;
     public RawImage muteButton;
@@ -28,6 +29,7 @@ public class VolumeController : MonoBehaviour {
 
     void Update() {
         if (InputLock.IsLocked) return;
+        if (selectionMenu != null && selectionMenu.IsHidden) return;
 
         if (Input.GetKeyDown(KeyCode.UpArrow)) AdjustVolume(0.1f);
         if (Input.GetKeyDown(KeyCode.DownArrow)) AdjustVolume(-0.1f);

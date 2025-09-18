@@ -6,33 +6,29 @@ using UnityEngine.UI;
 public class SongTransitionController : MonoBehaviour
 {
     [Header("Refs")]
-    public TrackQueueManager queue;
-    public SongLoader loader;
-    public SlidingMenuController selectionMenu;     // puede mover el player entero
-    public SlidingPanelController[] panelsToOpen;   // info / remix / controles
-    public EventSystem eventSystem;
+    public TrackQueueManager queue;                 // Debe exponer ResolveTargetFileNumber(...) y PeekMetadata(...)
+    public SongLoader loader;                       // Debe exponer LoadSongMetadataInstant(string), PrepareAudioClipRoutine(string,bool), PrepareVideosRoutine(string,bool), StartPlayback()
+    public SlidingMenuController selectionMenu;     // Lo cerraremos al cubrir la pantalla
+    public SlidingPanelController[] panelsToOpen;   // Paneles info/remix/controles para abrir bajo cobertura
+    public EventSystem eventSystem;                 // Para desactivar navegación
 
-    [Header("Overlay (Canvas AISLADO)")]
+    [Header("Overlay container")]
+    [Tooltip("CanvasGroup del overlay que contiene los 4 bloques. Debe estar a pantalla completa encima de la UI.")]
     public CanvasGroup overlayCanvas;
-    public RectTransform blockA; // 1
-    public RectTransform blockB; // 2
-    public RectTransform blockC; // 3
-    public RectTransform blockD; // 4
-    public RectTransform blockE; // 5
 
-    [Header("Timing")]
+    [Header("4 blocks (left -> right)")]
+    public RectTransform block1;
+    public RectTransform block2;
+    public RectTransform block3;
+    public RectTransform block4;
+
+    [Header("Anim")]
     public float slideDuration = 0.45f;
     public float slideStagger = 0.08f;
     public AnimationCurve inCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
     public AnimationCurve outCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
-    [Header("Root UI (player)")]
-    public RectTransform playerRoot;      // tu GO raíz “player”
-    public bool snapPlayerRoot = true;    // reponer a su posición original
-    private Vector2 playerInitialPos;
-
     private bool busy;
-    private RectTransform[] blocks;
 
     void Awake()
     {
@@ -40,126 +36,186 @@ public class SongTransitionController : MonoBehaviour
         {
             overlayCanvas.alpha = 0f;
             overlayCanvas.blocksRaycasts = false;
-            overlayCanvas.ignoreParentGroups = true;
-            overlayCanvas.transform.SetAsLastSibling();
         }
-        blocks = new[] { blockA, blockB, blockC, blockD, blockE };
         PlaceBlocksOffscreen();
-
-        if (playerRoot) playerInitialPos = playerRoot.anchoredPosition;
     }
 
     public bool IsBusy() => busy;
 
+    /* =================== API pública =================== */
     public void GoToNext() { if (!busy) StartCoroutine(DoTransition(+1, -1)); }
     public void GoToPrevious() { if (!busy) StartCoroutine(DoTransition(-1, -1)); }
     public void PlayFromFilteredIndex(int index) { if (!busy) StartCoroutine(DoTransition(0, index)); }
+    public void GoToAbsoluteIndex(int index) => PlayFromFilteredIndex(index); // compat
 
+    /* =================== Núcleo =================== */
     private IEnumerator DoTransition(int advance, int absoluteIndex)
     {
         busy = true;
         InputLock.Lock();
         if (eventSystem) eventSystem.sendNavigationEvents = false;
-
-        if (snapPlayerRoot && playerRoot)
+        if (overlayCanvas)
         {
-            LeanTween.cancel(playerRoot.gameObject); // por si alguna animación lo está moviendo
-            playerRoot.anchoredPosition = playerInitialPos;
+            overlayCanvas.alpha = 1f;
+            overlayCanvas.blocksRaycasts = true;
         }
 
-        if (overlayCanvas) { overlayCanvas.alpha = 1f; overlayCanvas.blocksRaycasts = true; }
+        // 1) Colores actual / siguiente para ENTRADA y último bloque
+        var cur = loader != null ? loader.metadata : null;
+        var nextMet = queue != null ? queue.PeekMetadata(advance, absoluteIndex) : null;
 
-        // Paletas
-        var cur = loader.metadata;
-        var nextMeta = queue.PeekMetadata(advance, absoluteIndex);
+        Color cp1 = cur != null ? cur.Color1 : Color.black;
+        Color cs1 = cur != null ? cur.Color2 : Color.black;
+        Color cp2 = nextMet != null ? nextMet.Color1 : Color.black; // lo usaremos en salida
+        Color cs2 = nextMet != null ? nextMet.Color2 : Color.black;
 
-        Color cs1 = cur?.Color2 ?? Color.black;
-        Color cp1 = cur?.Color1 ?? Color.black;
-        Color cs2 = nextMeta.Color2;
-        Color cp2 = nextMeta.Color1;
-
-        // ENTER: cs1/cp1 y último = cp2
-        PaintBlocks(new[] { cs1, cp1, cs1, cp1, cp2 });
+        // 2) Pintar ENTRADA: cp1, cs1, cp1, cs2
+        PaintBlocks(
+            b1: cp1,
+            b2: cs1,
+            b3: cp1,
+            b4: cs2
+        );
         PlaceBlocksOffscreen();
+
+        // 3) ENTRADA (cubrir)
         yield return SlideIn();
 
-        // No mover el player si el menú lo controla
-        if (selectionMenu && !selectionMenu.panelIsWholePlayerRoot)
+        // 4) Con pantalla cubierta: cerrar menú y abrir paneles (sin animación, para evitar flicker)
+        ForceCloseSelectionMenu();
+        ForceOpenPanels();
+
+        // 5) Preparar TODO (sin reproducir todavía)
+        //    - Resolver id destino
+        string id = queue.ResolveTargetFileNumber(advance, absoluteIndex);
+        if (!string.IsNullOrEmpty(id))
         {
-            if (!selectionMenu.IsHidden) selectionMenu.CloseInstant();
+            // Metadatos y colores INSTANT
+            loader.LoadSongMetadataInstant(id);
+            // Preparar audio (clip asignado, sin Play)
+            yield return StartCoroutine(loader.PrepareAudioClipRoutine(id, autoPlay: false));
+            // Preparar vídeo (VideoPlayer.Prepare o fallback vinilo listo, sin Play/Spin)
+            yield return StartCoroutine(loader.PrepareVideosRoutine(id, autoPlay: false));
+
+            // (Opcional) recalcular cp2/cs2 por si el Peek y el JSON difieren
+            cp2 = loader.metadata.Color1;
+            cs2 = loader.metadata.Color2;
         }
 
-        if (panelsToOpen != null)
-            foreach (var p in panelsToOpen) if (p && p.IsHidden) p.OpenInstant();
+        // 6) Arranque sincronizado (audio y vídeo/vinilo en el MISMO frame)
+        loader.StartPlayback();
 
-        // Cargar canción bajo la tapa
-        yield return StartCoroutine(SwapSongUnderCover(advance, absoluteIndex));
+        // 7) Pintar SALIDA en orden inverso 4-3-2-1:
+        //    cs2, cp2, cs2, cp2
+        PaintBlocks(
+            b1: cp2, // este color irá en el bloque1 pero saldrá al final; no importa el orden de pintado
+            b2: cs2,
+            b3: cp2,
+            b4: cs2
+        );
 
-        // EXIT: repintar con paleta 2 (cs2/cp2), salen en reversa
-        PaintBlocks(new[] { cp2, cs2, cp2, cs2, cp2 });
-        if (snapPlayerRoot && playerRoot) playerRoot.anchoredPosition = playerInitialPos;
+        // 8) SALIDA (descubrir) — orden 4,3,2,1 hacia la derecha
         yield return SlideOut();
 
-        if (overlayCanvas) { overlayCanvas.alpha = 0f; overlayCanvas.blocksRaycasts = false; }
+        // 9) Desbloqueo
+        if (overlayCanvas)
+        {
+            overlayCanvas.alpha = 0f;
+            overlayCanvas.blocksRaycasts = false;
+        }
         if (eventSystem) eventSystem.sendNavigationEvents = true;
         InputLock.Unlock();
         busy = false;
     }
 
-    /* ===== Pintado/posicionado ===== */
-    private void PaintBlocks(Color[] colors)
+    /* =================== Helpers UI =================== */
+    private void ForceCloseSelectionMenu()
     {
-        for (int i = 0; i < blocks.Length && i < colors.Length; i++)
-            SetImage(blocks[i], colors[i]);
+        if (selectionMenu == null) return;
+        selectionMenu.OpenInstant(); // asegura que NO quede abierto al terminar
     }
-    private void SetImage(RectTransform rt, Color c)
+
+    private void ForceOpenPanels()
+    {
+        if (panelsToOpen == null) return;
+        foreach (var p in panelsToOpen)
+        {
+            if (p == null) continue;
+            p.OpenInstant(); // abiertos bajo cobertura siempre
+        }
+    }
+
+    private void PaintBlocks(Color b1, Color b2, Color b3, Color b4)
+    {
+        SetImageColor(block1, b1);
+        SetImageColor(block2, b2);
+        SetImageColor(block3, b3);
+        SetImageColor(block4, b4);
+    }
+
+    private void SetImageColor(RectTransform rt, Color c)
     {
         if (!rt) return;
-        var img = rt.GetComponent<Image>() ?? rt.gameObject.AddComponent<Image>();
-        img.color = c; img.raycastTarget = false;
+        var img = rt.GetComponent<Image>();
+        if (!img) img = rt.gameObject.AddComponent<Image>();
+        img.color = c;
     }
+
+    private RectTransform RootRect()
+    {
+        return overlayCanvas ? overlayCanvas.GetComponent<RectTransform>() : null;
+    }
+
     private void PlaceBlocksOffscreen()
     {
-        if (!overlayCanvas) return;
-        float w = ((RectTransform)overlayCanvas.transform).rect.width;
-        foreach (var rt in blocks) MoveX(rt, -w);
+        var root = RootRect();
+        if (!root) return;
+        float w = root.rect.width;
+        MoveX(block1, -w);
+        MoveX(block2, -w);
+        MoveX(block3, -w);
+        MoveX(block4, -w);
     }
+
     private void MoveX(RectTransform rt, float x)
     {
         if (!rt) return;
-        var p = rt.anchoredPosition; p.x = x; rt.anchoredPosition = p;
+        var p = rt.anchoredPosition;
+        p.x = x;
+        rt.anchoredPosition = p;
     }
 
-    /* ===== Animación ===== */
     private IEnumerator SlideIn()
     {
-        for (int i = 0; i < blocks.Length; i++)
-        {
-            var rt = blocks[i];
-            if (rt) LeanTween.moveX(rt, 0f, slideDuration).setEase(inCurve);
-            if (i < blocks.Length - 1) yield return new WaitForSeconds(slideStagger);
-        }
-        yield return new WaitForSeconds(slideDuration);
-    }
-    private IEnumerator SlideOut()
-    {
-        if (!overlayCanvas) yield break;
-        float w = ((RectTransform)overlayCanvas.transform).rect.width;
-        for (int i = blocks.Length - 1; i >= 0; i--)
-        {
-            var rt = blocks[i];
-            if (rt) LeanTween.moveX(rt, w, slideDuration).setEase(outCurve);
-            if (i > 0) yield return new WaitForSeconds(slideStagger);
-        }
-        yield return new WaitForSeconds(slideDuration);
+        int id1 = LeanTween.moveX(block1, 0f, slideDuration).setEase(inCurve).id;
+        yield return new WaitForSeconds(slideStagger);
+        int id2 = LeanTween.moveX(block2, 0f, slideDuration).setEase(inCurve).id;
+        yield return new WaitForSeconds(slideStagger);
+        int id3 = LeanTween.moveX(block3, 0f, slideDuration).setEase(inCurve).id;
+        yield return new WaitForSeconds(slideStagger);
+        int id4 = LeanTween.moveX(block4, 0f, slideDuration).setEase(inCurve).id;
+        yield return WaitForTween(id4);
     }
 
-    /* ===== Carga ===== */
-    private IEnumerator SwapSongUnderCover(int advance, int absoluteIndex)
+    private IEnumerator SlideOut()
     {
-        int id = queue.ResolveTargetId(advance, absoluteIndex);
-        loader.LoadSongMetadataInstant(id);
-        yield return StartCoroutine(loader.LoadAudioClipRoutine(id));
-        yield return StartCoroutine(loader.LoadAndPlayVideosRoutine(id));
+        var root = RootRect();
+        if (!root) yield break;
+        float w = root.rect.width;
+
+        int id4 = LeanTween.moveX(block4, w, slideDuration).setEase(outCurve).id;
+        yield return new WaitForSeconds(slideStagger);
+        int id3 = LeanTween.moveX(block3, w, slideDuration).setEase(outCurve).id;
+        yield return new WaitForSeconds(slideStagger);
+        int id2 = LeanTween.moveX(block2, w, slideDuration).setEase(outCurve).id;
+        yield return new WaitForSeconds(slideStagger);
+        int id1 = LeanTween.moveX(block1, w, slideDuration).setEase(outCurve).id;
+        yield return WaitForTween(id1);
+    }
+
+    private IEnumerator WaitForTween(int tweenId)
+    {
+        while (LeanTween.isTweening(tweenId))
+            yield return null;
     }
 }

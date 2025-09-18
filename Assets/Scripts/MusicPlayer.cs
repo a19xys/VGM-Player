@@ -3,12 +3,13 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
 
-public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerDownHandler {
-
+public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerDownHandler
+{
     [Header("Refs")]
     public SongLoader songLoader;
     public TrackQueueManager queueManager;
     public SongTransitionController transition; // Controlador de transición
+    public SlidingMenuController selectionMenu;
 
     [Header("Audio / UI")]
     public AudioSource audioSource;            // Fuente de audio para reproducir la música
@@ -30,10 +31,13 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     private float dragNormalizedPosition;      // Posición normalizada durante el arrastre
     private bool isDragging = false;           // Indica si se está arrastrando el agarre
     private bool showCountdown = false;        // Indica si mostrar el contador regresivo en el texto 2
-
     private readonly Color inactiveColor = new Color(171 / 255f, 171 / 255f, 171 / 255f);
 
-    void Start() {
+    // Para detectar cambios de play/pause y sincronizar el vinilo
+    private bool lastPlaying;
+
+    void Start()
+    {
         // Configurar barra de progreso
         if (progressBar != null) { progressBar.minValue = 0; progressBar.maxValue = 1; }
 
@@ -51,40 +55,55 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         // Refrescar indicadores cuando cambie el modo
         if (queueManager != null) queueManager.OnPlayModeChanged += _ => RefreshModeIndicators();
 
-        // Pintar estado actual
+        // Estado inicial
         RefreshModeIndicators();
         RefreshPlayIcon();
+
+        // Inicializar estado de vinilo según lo que haya cargado SongLoader
+        lastPlaying = (audioSource != null && audioSource.isPlaying);
+        UpdateVinylSpin();
     }
 
-    void Update() {
+    void Update()
+    {
         // Actualiza icono Play/Pause siempre (aunque esté bloqueado)
         RefreshPlayIcon();
 
-        // Si transición/overlay está bloqueando entradas, no procesar atajos ni navegación
-        if (InputLock.IsLocked) return;
-
-        // Teclas básicas
-        if (Input.GetKeyDown(KeyCode.Space)) { TogglePlayPause(); }
-
-        // Fin de pista → pasar con transición
-        if (audioSource != null && audioSource.clip != null && !audioSource.isPlaying && audioSource.time >= audioSource.clip.length) {
-            if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne) { audioSource.time = 0f; audioSource.Play(); }
-            else if (transition != null) { transition.GoToNext(); }
-            return; // evitar doble lógica en este frame
-        }
-
         // Actualizar barra y tiempos si se reproduce y no se arrastra
-        if (!isDragging && audioSource != null && audioSource.isPlaying) {
+        if (!isDragging && audioSource != null && audioSource.isPlaying)
+        {
             UpdateProgressBar();
-
             if (currentTimeText != null)
                 currentTimeText.text = FormatTime(audioSource.time);
 
-            if (showCountdown && durationText != null) {
+            if (showCountdown && durationText != null)
+            {
                 float remainingTime = audioSource.clip.length - audioSource.time;
                 durationText.text = "-" + FormatTime(remainingTime);
             }
         }
+
+        // Fin de pista -> pasar con transición o repetir uno
+        if (audioSource != null && audioSource.clip != null && !audioSource.isPlaying && audioSource.time >= audioSource.clip.length)
+        {
+            if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne)
+            {
+                audioSource.time = 0f;
+                audioSource.Play();
+                UpdateVinylSpin();
+            }
+            else if (transition != null)
+            {
+                transition.GoToNext();
+            }
+            return;
+        }
+
+        // Bloquear teclas si el menú está abierto
+        if (selectionMenu != null && selectionMenu.IsHidden) return;
+
+        // Pausa
+        if (Input.GetKeyDown(KeyCode.Space)) { TogglePlayPause(); }
 
         // Saltos rápidos
         if (Input.GetKeyDown(KeyCode.LeftArrow)) { SkipTime(-skiplapse); }
@@ -97,11 +116,22 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         // Cambios de modo
         if (Input.GetKeyDown(KeyCode.S)) { ToggleShuffle(); }
         if (Input.GetKeyDown(KeyCode.L)) { ToggleRepeat(); }
+
+        // Si el estado de reproducción cambia (Play/Pause desde fuera), sincroniza vinilo
+        if (audioSource != null)
+        {
+            if (audioSource.isPlaying != lastPlaying)
+            {
+                lastPlaying = audioSource.isPlaying;
+                UpdateVinylSpin();
+            }
+        }
     }
 
     /* ============================= Drag / Seek ============================= */
 
-    public void OnBeginDrag(PointerEventData eventData) {
+    public void OnBeginDrag(PointerEventData eventData)
+    {
         if (InputLock.IsLocked) return;
         if (grip == null) return;
 
@@ -110,62 +140,74 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             isDragging = true;
     }
 
-    public void OnDrag(PointerEventData eventData) {
+    public void OnDrag(PointerEventData eventData)
+    {
         if (InputLock.IsLocked) return;
         if (!isDragging || progressBar == null) return;
 
         RectTransform progressBarRect = progressBar.GetComponent<RectTransform>();
-        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(progressBarRect, eventData.position, eventData.pressEventCamera, out Vector2 localPoint)) {
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(progressBarRect, eventData.position, eventData.pressEventCamera, out Vector2 localPoint))
+        {
             dragNormalizedPosition = Mathf.Clamp01((localPoint.x / progressBarRect.rect.width) + 0.5f);
             progressBar.value = dragNormalizedPosition;
             UpdateGripPosition(dragNormalizedPosition);
         }
     }
 
-    public void OnEndDrag(PointerEventData eventData) {
+    public void OnEndDrag(PointerEventData eventData)
+    {
         if (!isDragging) return;
         isDragging = false;
-
         if (InputLock.IsLocked) return;
         if (audioSource == null || audioSource.clip == null) return;
 
         float newTime = Mathf.Clamp(audioSource.clip.length * dragNormalizedPosition, 0, audioSource.clip.length - 0.01f);
         audioSource.time = newTime;
         if (!audioSource.isPlaying) audioSource.Play();
+        UpdateVinylSpin();
     }
 
-    public void OnPointerDown(PointerEventData eventData) {
+    public void OnPointerDown(PointerEventData eventData)
+    {
         if (InputLock.IsLocked) return;
         if (progressBar == null || audioSource == null || audioSource.clip == null) return;
 
         RectTransform progressBarRect = progressBar.GetComponent<RectTransform>();
-        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(progressBarRect, eventData.position, eventData.pressEventCamera, out Vector2 localPoint)) {
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(progressBarRect, eventData.position, eventData.pressEventCamera, out Vector2 localPoint))
+        {
             float normalizedPosition = Mathf.Clamp01((localPoint.x / progressBarRect.rect.width) + 0.5f);
             progressBar.value = normalizedPosition;
-
             UpdateGripPosition(normalizedPosition);
 
             float newTime = Mathf.Clamp(audioSource.clip.length * normalizedPosition, 0, audioSource.clip.length - 0.01f);
             audioSource.time = newTime;
 
             if (!audioSource.isPlaying) audioSource.Play();
+            UpdateVinylSpin();
         }
     }
 
     /* ============================= Controles ============================= */
 
-    public void TogglePlayPause() {
+    public void TogglePlayPause()
+    {
         if (audioSource == null) return;
+
         if (audioSource.isPlaying) audioSource.Pause();
-        else {
+        else
+        {
             if (audioSource.clip != null && audioSource.time >= audioSource.clip.length)
                 audioSource.time = 0f;
             audioSource.Play();
         }
+
         RefreshPlayIcon();
+        lastPlaying = audioSource.isPlaying;
+        UpdateVinylSpin();
     }
 
-    public void ToggleShuffle() {
+    public void ToggleShuffle()
+    {
         if (InputLock.IsLocked) return;
         if (queueManager == null) return;
 
@@ -175,94 +217,111 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         RefreshModeIndicators();
     }
 
-    public void ToggleRepeat() {
+    public void ToggleRepeat()
+    {
         if (InputLock.IsLocked) return;
         if (queueManager == null) return;
 
-        PlayMode next = queueManager.playMode switch {
+        PlayMode next = queueManager.playMode switch
+        {
             PlayMode.Normal => PlayMode.RepeatOne,
             PlayMode.RepeatOne => PlayMode.RepeatAll,
             PlayMode.RepeatAll => PlayMode.Normal,
             PlayMode.Shuffle => PlayMode.RepeatOne,
             _ => PlayMode.Normal
         };
+
         queueManager.SetMode(next);
         audioSource.loop = (next == PlayMode.RepeatOne);
         RefreshModeIndicators();
     }
 
-    public void OnDurationTextClick() {
+    public void OnDurationTextClick()
+    {
         if (InputLock.IsLocked) return;
         if (audioSource == null || audioSource.clip == null || durationText == null) return;
 
         showCountdown = !showCountdown;
-        if (showCountdown) {
+        if (showCountdown)
+        {
             float remainingTime = audioSource.clip.length - audioSource.time;
             durationText.text = "-" + FormatTime(remainingTime);
-        } else { durationText.text = FormatTime(audioSource.clip.length); }
+        }
+        else { durationText.text = FormatTime(audioSource.clip.length); }
     }
 
     /* ============================= Helpers UI ============================= */
 
-    private void UpdateProgressBar() {
+    private void UpdateProgressBar()
+    {
         if (progressBar == null || audioSource == null || audioSource.clip == null) return;
         progressBar.value = audioSource.time / audioSource.clip.length;
         UpdateGripPosition(progressBar.value);
     }
 
-    private void UpdateGripPosition(float normalizedPosition) {
+    private void UpdateGripPosition(float normalizedPosition)
+    {
         if (progressBar == null || grip == null) return;
-
         RectTransform progressBarRect = progressBar.GetComponent<RectTransform>();
         float gripX = Mathf.Lerp(progressBarRect.rect.xMin, progressBarRect.rect.xMax, normalizedPosition);
-
         Vector3 localPosition = grip.transform.localPosition;
         localPosition.x = gripX;
         grip.transform.localPosition = localPosition;
     }
 
-    private void SkipTime(float seconds) {
+    private void SkipTime(float seconds)
+    {
         if (InputLock.IsLocked) return;
         if (audioSource == null || audioSource.clip == null) return;
 
         float newTime = audioSource.time + seconds;
 
         // Si nos pasamos del final, invocar transición a Next
-        if (newTime >= audioSource.clip.length - 0.001f) {
+        if (newTime >= audioSource.clip.length - 0.001f)
+        {
             if (transition != null) { transition.GoToNext(); return; }
             newTime = 0f; // fallback
-        } else if (newTime < 0f) newTime = 0f;
+        }
+        else if (newTime < 0f) newTime = 0f;
 
         JumpTime(newTime);
     }
 
-    public void JumpTime(float newTime) {
+    public void JumpTime(float newTime)
+    {
         if (audioSource == null || audioSource.clip == null) return;
 
         audioSource.time = newTime;
-
         UpdateProgressBar();
 
         if (currentTimeText != null) currentTimeText.text = FormatTime(audioSource.time);
 
-        if (showCountdown && durationText != null) {
+        if (showCountdown && durationText != null)
+        {
             float remainingTime = audioSource.clip.length - audioSource.time;
             durationText.text = "-" + FormatTime(remainingTime);
         }
+
+        // Si estaba en pausa y haces seek manual, no forzamos play; pero si está sonando,
+        // asegúrate de que el vinilo sigue girando si no hay vídeo.
+        UpdateVinylSpin();
     }
 
-    private string FormatTime(float time) {
+    private string FormatTime(float time)
+    {
         int minutes = Mathf.FloorToInt(time / 60f);
         int seconds = Mathf.FloorToInt(time % 60f);
         return $"{minutes}:{seconds:00}";
     }
 
-    private void RefreshPlayIcon() {
+    private void RefreshPlayIcon()
+    {
         if (playButton == null || audioSource == null) return;
         playButton.texture = audioSource.isPlaying ? pauseTexture : playTexture;
     }
 
-    public void RefreshModeIndicators() {
+    public void RefreshModeIndicators()
+    {
         if (queueManager == null || songLoader == null) return;
         if (repeatButton == null || shuffleButton == null) return;
 
@@ -284,17 +343,32 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
     /* ====================== Botones UI (Next/Prev) ====================== */
 
-    public void OnClickNext() {
+    public void OnClickNext()
+    {
         if (InputLock.IsLocked) return;
         if (transition != null) transition.GoToNext();
         else if (queueManager != null) queueManager.Next(); // fallback
     }
 
-    public void OnClickPrevious() {
+    public void OnClickPrevious()
+    {
         if (InputLock.IsLocked) return;
+
         if (audioSource != null && audioSource.time > 3f) { JumpTime(0f); }
         else if (transition != null) transition.GoToPrevious();
         else if (queueManager != null) queueManager.Previous(); // fallback
     }
 
+    /* ====================== Vinilo: sync con Play/Pause y vídeo ====================== */
+
+    private void UpdateVinylSpin()
+    {
+        if (songLoader == null || songLoader.vinyl == null) return;
+
+        bool isPlaying = (audioSource != null && audioSource.isPlaying);
+        bool videoActive = (songLoader.videoContainer != null && songLoader.videoContainer.activeSelf);
+
+        // Sólo gira si NO hay vídeo y el audio está reproduciendo
+        songLoader.vinyl.SetSpinDesired(!videoActive && isPlaying);
+    }
 }

@@ -1,9 +1,10 @@
+using NUnit.Framework.Internal;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro;
 
 public class SongMenuManager : MonoBehaviour {
 
@@ -225,10 +226,13 @@ public class SongMenuManager : MonoBehaviour {
         // NO cerramos el menú aquí: lo cerrará la transición cuando cubra la pantalla.
         if (transition != null) { transition.PlayFromFilteredIndex(idx); }
         else {
-            // Fallback: comportamiento previo
-            if (slidingMenuController != null) slidingMenuController.TryTogglePanel();
+            //if (slidingMenuController != null) slidingMenuController.TryTogglePanel();
             if (queueManager != null) queueManager.PlayFromFilteredIndex(idx);
-            else if (songLoader != null) songLoader.NextSong(int.Parse(songData.FileNumber));
+            else if (songLoader != null) {
+                songLoader.LoadSongMetadataInstant(songData.FileNumber);
+                StartCoroutine(songLoader.PrepareAudioClipRoutine(songData.FileNumber, true));
+                StartCoroutine(songLoader.PrepareVideosRoutine(songData.FileNumber, true));
+            }
         }
     }
 
