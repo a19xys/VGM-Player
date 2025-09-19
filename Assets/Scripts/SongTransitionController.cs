@@ -132,7 +132,7 @@ public class SongTransitionController : MonoBehaviour
     private void ForceCloseSelectionMenu()
     {
         if (selectionMenu == null) return;
-        selectionMenu.OpenInstant(); // asegura que NO quede abierto al terminar
+        selectionMenu.CloseMenuInstant(); // asegura que NO quede abierto al terminar
     }
 
     private void ForceOpenPanels()

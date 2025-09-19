@@ -1,7 +1,6 @@
 using UnityEngine;
 
-public class SlidingPanelController : MonoBehaviour
-{
+public class SlidingPanelController : MonoBehaviour {
     [Header("Panel")]
     public RectTransform panel;
     public float hiddenOffset;
@@ -33,10 +32,9 @@ public class SlidingPanelController : MonoBehaviour
         UpdateRotation();
     }
 
-    void Update()
-    {
+    void Update() {
         // Hotkey de teclado
-        if (toggleKey != KeyCode.None && Input.GetKeyDown(toggleKey))
+        if (toggleKey != KeyCode.None && Input.GetKeyDown(toggleKey) && !SlidingMenuController.AnyOpen)
             TryTogglePanel();
     }
 
@@ -101,6 +99,6 @@ public class SlidingPanelController : MonoBehaviour
     private void UpdateRotation()
     {
         if (!rotationTarget) return;
-        rotationTarget.localRotation = Quaternion.Euler(0f, 0f, IsHidden ? 90f : 270f);
+        rotationTarget.localRotation = Quaternion.Euler(0f, 0f, IsHidden ? 270f : 90f);
     }
 }

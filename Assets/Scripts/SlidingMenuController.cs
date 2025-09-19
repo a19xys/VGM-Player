@@ -3,51 +3,55 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
-/// Controla el deslizamiento del contenedor y el velo oscuro.
-/// - Si 'controlsWholePlayerRoot' es TRUE (tu caso), el panel mueve TODO el "player".
-///   Entonces: Close => menú visible (velo ON), Open => menú oculto (velo OFF).
-/// - Si es FALSE (el panel es el propio menú), Open => menú visible (velo ON).
+/// Control del menú deslizante con SEMÁNTICA NORMAL y configuración fija:
+/// - El 'panel' es SIEMPRE el "player" completo.
+/// - El MENÚ arranca OCULTO (player en su posición original).
+///
+/// API normal:
+///   OpenMenu()  => MENÚ VISIBLE  (overlay ON; player desplazado a hiddenPos)
+///   CloseMenu() => MENÚ OCULTO   (overlay OFF; player en initialPos)
+///   TryToggleMenu()
+///
+/// Retrocompatibilidad (wrappers):
+///   TryTogglePanel(), Open(), Close(), OpenInstant(), CloseInstant()
 /// </summary>
 public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
 {
-    [Header("Panel")]
-    public RectTransform panel;               // En tu escena: el RectTransform del "player"
-    public float hiddenOffset = 510.0f;
-    public float animationDuration = 0.9f;
-    public Vector2 hiddenDirection = Vector2.left; // Horizontal si |x|>|y|; vertical en caso contrario
-    public Transform rotationTarget;
+    [Header("Panel (player root)")]
+    public RectTransform panel;               // RectTransform del "player" completo
+    public float hiddenOffset = 510f;         // cuánto queda asomado cuando está desplazado
+    public float animationDuration = 0.9f;    // duración del deslizamiento
+    public Vector2 hiddenDirection = Vector2.left; // hacia dónde se desplaza el player para VER el menú
+    public Transform rotationTarget;          // icono/chevron opcional que rota
 
-    [Header("Capa oscura")]
+    [Header("Capa oscura (overlay)")]
     public RawImage dimOverlay;
     public float fadeDuration = 0.3f;
-    [Range(0f, 1f)] public float overlayAlpha = 0.785f;
+    [Range(0f, 1f)] public float overlayAlpha = 0.8f;
 
     [Header("Hotkey")]
-    public KeyCode toggleKey;
+    public KeyCode toggleKey = KeyCode.Escape;
 
-    [Header("Behaviour")]
-    public bool startHidden = false;            // respeta estado inicial
-    public bool controlsWholePlayerRoot = true; // TRUE: panel = "player" (tu wiring)
-                                                // FALSE: panel = panel del menú
-
-    // Estado público
-    public bool IsHidden { get; private set; }  // TRUE => panel en posición oculta
-    public bool IsOpen => !IsHidden;
+    // Estado interno
+    private Vector2 initialPos; // posición “normal” del player
+    private Vector2 hiddenPos;  // posición desplazada (menú visible)
+    private bool canToggle = true;
 
     /// <summary>
-    /// Menú visible según wiring:
-    /// - controlsWholePlayerRoot = true  => menú visible cuando IsHidden == true (player desplazado)
-    /// - controlsWholePlayerRoot = false => menú visible cuando IsHidden == false (panel del menú abierto)
+    /// TRUE cuando el panel está en hiddenPos (player desplazado).
+    /// Como el panel es el player, esto significa MENÚ VISIBLE.
     /// </summary>
-    public bool IsMenuVisible => controlsWholePlayerRoot ? IsHidden : !IsHidden;
+    public bool IsHidden { get; private set; }
 
-    // Atajo global opcional (por si otros scripts quieren saber si hay un menú abierto)
+    /// <summary>
+    /// Visibilidad del MENÚ (igual a IsHidden en este modelo fijo).
+    /// </summary>
+    public bool IsMenuVisible => IsHidden;
+
+    /// <summary>
+    /// Flag global para que otros scripts bloqueen hotkeys cuando el menú esté abierto.
+    /// </summary>
     public static bool AnyOpen { get; private set; }
-
-    // Internos
-    private Vector2 initialPos;
-    private Vector2 hiddenPos;
-    private bool canToggle = true;
 
     /* ================= Ciclo ================= */
 
@@ -58,73 +62,44 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
         initialPos = panel.anchoredPosition;
         hiddenPos = ComputeHiddenPosition();
 
-        // Estado inicial del panel
-        if (startHidden)
-        {
-            panel.anchoredPosition = hiddenPos;
-            IsHidden = true;
-        }
-        else
-        {
-            panel.anchoredPosition = initialPos;
-            IsHidden = false;
-        }
+        // Estado inicial FIJO: MENÚ oculto (player en initialPos)
+        panel.anchoredPosition = initialPos;
+        IsHidden = false;          // panel NO está en hiddenPos
+        AnyOpen = false;
 
-        // Estado inicial del overlay: encendido sólo si el MENÚ es visible
-        ApplyOverlayInstant(IsMenuVisible ? overlayAlpha : 0f, IsMenuVisible);
+        // Overlay apagado
+        ApplyOverlayInstant(0f, false);
 
-        AnyOpen = IsMenuVisible;
         UpdateRotation();
     }
 
     void Update()
     {
         if (toggleKey != KeyCode.None && Input.GetKeyDown(toggleKey))
-            TryTogglePanel();
+            TryToggleMenu();
     }
 
     /* ================= Input ================= */
 
     public void OnPointerClick(PointerEventData eventData)
     {
-        // Sólo si se clicó el propio botón (no sus hijos)
         if (eventData.pointerEnter == gameObject)
-            TryTogglePanel();
+            TryToggleMenu();
     }
 
-    public void TryTogglePanel()
+    /* ============== API NORMAL ============== */
+
+    public void TryToggleMenu()
     {
         if (InputLock.IsLocked) return;
         if (!canToggle) return;
 
-        if (IsHidden) Open();
-        else Close();
+        if (IsMenuVisible) CloseMenu();
+        else OpenMenu();
     }
 
-    /* =============== Animadas ================= */
-
-    /// <summary>Open coloca el panel en su posición inicial.</summary>
-    public void Open()
-    {
-        if (!panel || !canToggle) return;
-        canToggle = false;
-
-        LeanTween.move(panel, initialPos, animationDuration)
-            .setEase(LeanTweenType.easeInOutQuart)
-            .setOnComplete(() => canToggle = true);
-
-        // Cambia estado primero, así IsMenuVisible refleja la nueva realidad
-        IsHidden = false;
-
-        // Overlay visible sólo si el MENÚ está visible
-        SetOverlayVisibleAnimated(IsMenuVisible);
-
-        AnyOpen = IsMenuVisible;
-        UpdateRotation();
-    }
-
-    /// <summary>Close desplaza el panel hasta su posición oculta.</summary>
-    public void Close()
+    /// <summary>Abre el MENÚ (player a hiddenPos, overlay ON) con animación.</summary>
+    public void OpenMenu()
     {
         if (!panel || !canToggle) return;
         canToggle = false;
@@ -133,55 +108,57 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
             .setEase(LeanTweenType.easeInOutQuart)
             .setOnComplete(() => canToggle = true);
 
-        IsHidden = true;
-
-        // Overlay visible sólo si el MENÚ está visible
-        SetOverlayVisibleAnimated(IsMenuVisible);
-
-        AnyOpen = IsMenuVisible;
+        IsHidden = true;     // ahora el panel está (o irá) a hiddenPos
+        SetOverlayVisibleAnimated(true);
+        AnyOpen = true;
         UpdateRotation();
     }
 
-    /* =============== Instantáneas =============== */
-
-    public void OpenInstant()
+    /// <summary>Cierra el MENÚ (player a initialPos, overlay OFF) con animación.</summary>
+    public void CloseMenu()
     {
-        if (!panel) return;
+        if (!panel || !canToggle) return;
+        canToggle = false;
 
-        panel.anchoredPosition = initialPos;
-        IsHidden = false;
+        LeanTween.move(panel, initialPos, animationDuration)
+            .setEase(LeanTweenType.easeInOutQuart)
+            .setOnComplete(() => canToggle = true);
 
-        ApplyOverlayInstant(IsMenuVisible ? overlayAlpha : 0f, IsMenuVisible);
-
-        AnyOpen = IsMenuVisible;
+        IsHidden = false;    // vuelve a initialPos
+        SetOverlayVisibleAnimated(false);
+        AnyOpen = false;
         UpdateRotation();
     }
 
-    public void CloseInstant()
+    public void OpenMenuInstant()
     {
         if (!panel) return;
 
         panel.anchoredPosition = hiddenPos;
         IsHidden = true;
 
-        ApplyOverlayInstant(IsMenuVisible ? overlayAlpha : 0f, IsMenuVisible);
-
-        AnyOpen = IsMenuVisible;
+        ApplyOverlayInstant(overlayAlpha, true);
+        AnyOpen = true;
         UpdateRotation();
     }
 
-    /// <summary>Coloca el panel exactamente en la pos. inicial sin tocar estados.</summary>
-    public void SnapToInitial()
+    public void CloseMenuInstant()
     {
         if (!panel) return;
+
         panel.anchoredPosition = initialPos;
+        IsHidden = false;
+
+        ApplyOverlayInstant(0f, false);
+        AnyOpen = false;
+        UpdateRotation();
     }
 
     /* ================= Helpers ================= */
 
     private Vector2 ComputeHiddenPosition()
     {
-        // Si movimiento principal es horizontal => usa width; si no, usa height
+        // Distancia según eje dominante (horizontal si |x|>=|y|, en otro caso vertical)
         float distance = Mathf.Abs(hiddenDirection.x) >= Mathf.Abs(hiddenDirection.y)
             ? (panel.rect.width - hiddenOffset)
             : (panel.rect.height - hiddenOffset);
@@ -193,8 +170,8 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
     {
         if (!dimOverlay) return;
 
-        dimOverlay.gameObject.SetActive(true); // lo encendemos para animar siempre
-        dimOverlay.raycastTarget = visible;    // sólo bloquea clicks cuando visible
+        dimOverlay.gameObject.SetActive(true);
+        dimOverlay.raycastTarget = visible;
 
         float fromA = dimOverlay.color.a;
         float toA = visible ? overlayAlpha : 0f;
@@ -208,7 +185,6 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
             })
             .setOnComplete(() =>
             {
-                // Al final, si debía estar oculto, sí desactivamos el GO
                 if (!visible)
                     dimOverlay.gameObject.SetActive(false);
             });
@@ -229,7 +205,7 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
     private void UpdateRotation()
     {
         if (!rotationTarget) return;
-        // Simple feedback visual (ajústalo a tu gusto)
-        rotationTarget.localRotation = Quaternion.Euler(0f, 0f, IsHidden ? 90f : 270f);
+        // 270° cuando el menú está visible, 90° cuando está oculto (ajústalo si tu icono lo necesita)
+        rotationTarget.localRotation = Quaternion.Euler(0f, 0f, IsMenuVisible ? 270f : 90f);
     }
 }

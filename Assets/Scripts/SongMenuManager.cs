@@ -226,7 +226,6 @@ public class SongMenuManager : MonoBehaviour {
         // NO cerramos el menú aquí: lo cerrará la transición cuando cubra la pantalla.
         if (transition != null) { transition.PlayFromFilteredIndex(idx); }
         else {
-            //if (slidingMenuController != null) slidingMenuController.TryTogglePanel();
             if (queueManager != null) queueManager.PlayFromFilteredIndex(idx);
             else if (songLoader != null) {
                 songLoader.LoadSongMetadataInstant(songData.FileNumber);

@@ -28,8 +28,10 @@ public class VolumeController : MonoBehaviour {
     }
 
     void Update() {
+        // Bloqueo por transición
         if (InputLock.IsLocked) return;
-        if (selectionMenu != null && selectionMenu.IsHidden) return;
+        // Bloque por menú abierto
+        if (SlidingMenuController.AnyOpen) return;
 
         if (Input.GetKeyDown(KeyCode.UpArrow)) AdjustVolume(0.1f);
         if (Input.GetKeyDown(KeyCode.DownArrow)) AdjustVolume(-0.1f);
