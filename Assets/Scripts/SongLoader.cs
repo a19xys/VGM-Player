@@ -103,6 +103,13 @@ public class SongLoader : MonoBehaviour
         // Remix visible sólo si hay texto
         if (remixObject) remixObject.SetActive(!string.IsNullOrWhiteSpace(title2Text.text));
 
+        // Reajustar geometría del panel de remix si existe y está activo ahora
+        if (remixObject && remixObject.activeInHierarchy) {
+            var sp = remixObject.GetComponent<SlidingPanelController>();
+            // Forzar que el layout se estabilice y que el panel use el tamaño correcto
+            if (sp != null) { sp.OnExternalContentPossiblyChangedAndBecameActive(); }
+        }
+
         // Letras
         if (lyricsController != null)
         {

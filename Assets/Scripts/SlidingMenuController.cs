@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UnityEngine.Events;
 
 /// <summary>
 /// Control del menú deslizante con SEMÁNTICA NORMAL y configuración fija:
@@ -31,6 +32,12 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
 
     [Header("Hotkey")]
     public KeyCode toggleKey = KeyCode.Escape;
+
+    [System.Serializable] public class MenuEvent : UnityEvent { }
+
+    [Header("Eventos")]
+    public MenuEvent onMenuOpened;
+    public MenuEvent onMenuClosed;
 
     // Estado interno
     private Vector2 initialPos; // posición “normal” del player
@@ -111,6 +118,7 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
         IsHidden = true;     // ahora el panel está (o irá) a hiddenPos
         SetOverlayVisibleAnimated(true);
         AnyOpen = true;
+        onMenuOpened?.Invoke();
         UpdateRotation();
     }
 
@@ -127,6 +135,7 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
         IsHidden = false;    // vuelve a initialPos
         SetOverlayVisibleAnimated(false);
         AnyOpen = false;
+        onMenuClosed?.Invoke();
         UpdateRotation();
     }
 
@@ -139,6 +148,7 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
 
         ApplyOverlayInstant(overlayAlpha, true);
         AnyOpen = true;
+        onMenuOpened?.Invoke();
         UpdateRotation();
     }
 
@@ -151,6 +161,7 @@ public class SlidingMenuController : MonoBehaviour, IPointerClickHandler
 
         ApplyOverlayInstant(0f, false);
         AnyOpen = false;
+        onMenuClosed?.Invoke();
         UpdateRotation();
     }
 

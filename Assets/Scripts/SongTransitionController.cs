@@ -11,6 +11,8 @@ public class SongTransitionController : MonoBehaviour
     public SlidingMenuController selectionMenu;     // Lo cerraremos al cubrir la pantalla
     public SlidingPanelController[] panelsToOpen;   // Paneles info/remix/controles para abrir bajo cobertura
     public EventSystem eventSystem;                 // Para desactivar navegación
+    public SongSkipFader skipFader;                 // Fundido del volumen de la canción al pasar a otra
+    public DualRemixMarquee dualRemixMarquee;
 
     [Header("Overlay container")]
     [Tooltip("CanvasGroup del overlay que contiene los 4 bloques. Debe estar a pantalla completa encima de la UI.")]
@@ -23,8 +25,8 @@ public class SongTransitionController : MonoBehaviour
     public RectTransform block4;
 
     [Header("Anim")]
-    public float slideDuration = 0.45f;
-    public float slideStagger = 0.08f;
+    public float slideDuration = 0.3f;
+    public float slideStagger = 0.12f;
     public AnimationCurve inCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
     public AnimationCurve outCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
@@ -49,16 +51,19 @@ public class SongTransitionController : MonoBehaviour
     public void GoToAbsoluteIndex(int index) => PlayFromFilteredIndex(index); // compat
 
     /* =================== Núcleo =================== */
-    private IEnumerator DoTransition(int advance, int absoluteIndex)
-    {
+    private IEnumerator DoTransition(int advance, int absoluteIndex) {
+
         busy = true;
+
         InputLock.Lock();
+
         if (eventSystem) eventSystem.sendNavigationEvents = false;
-        if (overlayCanvas)
-        {
+        if (overlayCanvas) {
             overlayCanvas.alpha = 1f;
             overlayCanvas.blocksRaycasts = true;
         }
+
+        if (skipFader != null) skipFader.BeginFadeOut();
 
         // 1) Colores actual / siguiente para ENTRADA y último bloque
         var cur = loader != null ? loader.metadata : null;
@@ -84,6 +89,7 @@ public class SongTransitionController : MonoBehaviour
         // 4) Con pantalla cubierta: cerrar menú y abrir paneles (sin animación, para evitar flicker)
         ForceCloseSelectionMenu();
         ForceOpenPanels();
+        dualRemixMarquee.ResetAndStart();
 
         // 5) Preparar TODO (sin reproducir todavía)
         //    - Resolver id destino
@@ -103,6 +109,7 @@ public class SongTransitionController : MonoBehaviour
         }
 
         // 6) Arranque sincronizado (audio y vídeo/vinilo en el MISMO frame)
+        if (skipFader != null) skipFader.RestoreIfSilent();
         loader.StartPlayback();
 
         // 7) Pintar SALIDA en orden inverso 4-3-2-1:
@@ -197,12 +204,14 @@ public class SongTransitionController : MonoBehaviour
         yield return WaitForTween(id4);
     }
 
+    
     private IEnumerator SlideOut()
     {
         var root = RootRect();
         if (!root) yield break;
         float w = root.rect.width;
 
+        yield return new WaitForSeconds(slideStagger);
         int id4 = LeanTween.moveX(block4, w, slideDuration).setEase(outCurve).id;
         yield return new WaitForSeconds(slideStagger);
         int id3 = LeanTween.moveX(block3, w, slideDuration).setEase(outCurve).id;
@@ -212,6 +221,7 @@ public class SongTransitionController : MonoBehaviour
         int id1 = LeanTween.moveX(block1, w, slideDuration).setEase(outCurve).id;
         yield return WaitForTween(id1);
     }
+    
 
     private IEnumerator WaitForTween(int tweenId)
     {
