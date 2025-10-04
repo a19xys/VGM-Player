@@ -45,6 +45,10 @@ public class SongLoader : MonoBehaviour
     [Header("Vinilo")]
     public VinylDiscController vinyl;  // raíz del vinilo (RawImage circular que rota)
 
+    public event System.Action<Color, Color> OnThemeChanged;
+    public event System.Action<SongMetadata> OnMetadataLoaded;
+    public event System.Action<AudioClip> OnAudioPrepared;
+
     [HideInInspector] public SongMetadata metadata;
 
     // --- Estado interno ---
@@ -110,14 +114,6 @@ public class SongLoader : MonoBehaviour
             if (sp != null) { sp.OnExternalContentPossiblyChangedAndBecameActive(); }
         }
 
-        // Letras
-        if (lyricsController != null)
-        {
-            lyricsController.ClearLyrics();
-            if (!string.IsNullOrEmpty(metadata.Lyrics))
-                lyricsController.LoadLyrics(metadata.Lyrics);
-        }
-
         // Logo opcional de UI
         string logoPath = Path.Combine(basePath, $"logo{id}.png");
         currentLogoTex = null;
@@ -162,8 +158,13 @@ public class SongLoader : MonoBehaviour
             }
         }
 
-        // Colores instantáneos (sin lerp)
+        // SongLoader.cs, dentro de LoadSongMetadataInstant(string id) al final del bloque donde ya tienes los colores aplicados
         AssignColorsInstant(metadata.Color1, metadata.Color2);
+
+        // Notificar a la UI (Color1/Color2 actualizados)
+        OnThemeChanged?.Invoke(metadata.Color1, metadata.Color2);
+
+        OnMetadataLoaded?.Invoke(metadata);
 
         // Color de fondo del área de vídeo por robustez (también lo haremos en Apply*Mode)
         if (gm_background != null)
@@ -238,6 +239,7 @@ public class SongLoader : MonoBehaviour
             {
                 audioSource.clip = clip;
                 audioSource.time = 0f;
+                OnAudioPrepared?.Invoke(clip);
 
                 if (autoPlay) audioSource.Play();
                 else audioSource.Stop(); // aseguramos que NO suene aún durante la cobertura

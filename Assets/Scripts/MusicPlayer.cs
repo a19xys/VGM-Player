@@ -3,88 +3,114 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
 
-public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerDownHandler
+/// <summary>
+/// Reproductor: gestiona Play/Pause, barra, tiempos, modos y navegación.
+/// - Soluciona PROBLEMA 6: al prepararse un nuevo AudioClip, actualiza duración y resetea progreso/tiempos.
+/// - Evita lambdas efímeras en eventos para permitir desuscripción limpia.
+/// </summary>
+public class MusicPlayer : MonoBehaviour,
+    IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerDownHandler
 {
     [Header("Refs")]
     public SongLoader songLoader;
     public TrackQueueManager queueManager;
-    public SongTransitionController transition; // Controlador de transición
+    public SongTransitionController transition; // Controlador de transición (siguiente/anterior con animación)
     public SlidingMenuController selectionMenu;
 
     [Header("Audio / UI")]
-    public AudioSource audioSource;            // Fuente de audio para reproducir la música
-    public Slider progressBar;                 // Barra de progreso de la canción
+    public AudioSource audioSource;            // Fuente de audio
+    public Slider progressBar;                 // Barra de progreso
     public GameObject grip;                    // Agarre de la barra
-    public TextMeshProUGUI currentTimeText;    // Texto del tiempo actual
-    public TextMeshProUGUI durationText;       // Texto de la duración total (o cuenta regresiva)
+    public TextMeshProUGUI currentTimeText;    // Tiempo actual
+    public TextMeshProUGUI durationText;       // Duración total (o cuenta atrás)
 
     [Header("Playback")]
     public float skiplapse = 5f;
 
     [Header("Buttons / Icons")]
-    public RawImage repeatButton;   // Botón de repetición
-    public RawImage shuffleButton;  // Botón de shuffle
-    public RawImage playButton;     // Botón de reproducción
-    public Texture playTexture;     // Textura para el botón de "Play"
-    public Texture pauseTexture;    // Textura para el botón de "Pause"
+    public RawImage repeatButton;              // Botón Repeat
+    public RawImage shuffleButton;             // Botón Shuffle
+    public RawImage playButton;                // Botón Play/Pause
+    public Texture playTexture;                // Icono Play
+    public Texture pauseTexture;               // Icono Pause
 
-    private float dragNormalizedPosition;      // Posición normalizada durante el arrastre
-    private bool isDragging = false;           // Indica si se está arrastrando el agarre
-    private bool showCountdown = false;        // Indica si mostrar el contador regresivo en el texto 2
+    // Estado
+    private float dragNormalizedPosition;      // Posición normalizada durante drag
+    private bool isDragging = false;           // ¿Se está arrastrando el agarre?
+    private bool showCountdown = false;        // ¿Mostrar cuenta atrás en durationText?
     private readonly Color inactiveColor = new Color(171 / 255f, 171 / 255f, 171 / 255f);
+    private bool lastPlaying;                  // Para sincronizar vinilo
 
-    // Para detectar cambios de play/pause y sincronizar el vinilo
-    private bool lastPlaying;
+    /* ============================= Ciclo de vida ============================= */
 
     void Start()
     {
-        // Configurar barra de progreso
+        // Configuración inicial de la barra
         if (progressBar != null) { progressBar.minValue = 0; progressBar.maxValue = 1; }
 
-        // Audio no en loop por defecto (RepeatOne controlará esto)
+        // No hacemos loop salvo RepeatOne (lo ajustamos en RefreshModeIndicators)
         if (audioSource != null) { audioSource.loop = false; }
 
-        // Mostrar la duración si ya hay clip
-        if (audioSource != null && audioSource.clip != null && durationText != null)
-            durationText.text = FormatTime(audioSource.clip.length);
+        // Suscripciones a eventos
+        if (queueManager != null) queueManager.OnPlayModeChanged += HandlePlayModeChanged;
+        if (songLoader != null)
+        {
+            songLoader.OnThemeChanged += HandleThemeChanged;   // Colores botones según tema
+            songLoader.OnAudioPrepared += HandleAudioPrepared;  // ⬅️ Duración/progreso de la nueva pista
+        }
 
-        // Colores iniciales de botones
-        if (repeatButton != null) repeatButton.color = inactiveColor;
-        if (shuffleButton != null) shuffleButton.color = inactiveColor;
-
-        // Refrescar indicadores cuando cambie el modo
-        if (queueManager != null) queueManager.OnPlayModeChanged += _ => RefreshModeIndicators();
-
-        // Estado inicial
+        // Estado visual inicial
         RefreshModeIndicators();
         RefreshPlayIcon();
 
-        // Inicializar estado de vinilo según lo que haya cargado SongLoader
+        // Si arrancamos con clip ya cargado (firstSongId), mostrar su duración
+        if (audioSource != null && audioSource.clip != null && durationText != null)
+        {
+            durationText.text = showCountdown
+                ? "-" + FormatTime(audioSource.clip.length)
+                : FormatTime(audioSource.clip.length);
+        }
+
+        // Inicializar estado de vinilo
         lastPlaying = (audioSource != null && audioSource.isPlaying);
         UpdateVinylSpin();
     }
 
+    private void OnDestroy()
+    {
+        if (queueManager != null) queueManager.OnPlayModeChanged -= HandlePlayModeChanged;
+        if (songLoader != null)
+        {
+            songLoader.OnThemeChanged -= HandleThemeChanged;
+            songLoader.OnAudioPrepared -= HandleAudioPrepared;
+        }
+    }
+
+    /* ============================= Update ============================= */
+
     void Update()
     {
-        // Actualiza icono Play/Pause siempre (aunque esté bloqueado)
+        // Icono Play/Pause siempre actualizado
         RefreshPlayIcon();
 
-        // Actualizar barra y tiempos si se reproduce y no se arrastra
+        // Actualizar barra y tiempos mientras suena y no se arrastra
         if (!isDragging && audioSource != null && audioSource.isPlaying)
         {
             UpdateProgressBar();
+
             if (currentTimeText != null)
                 currentTimeText.text = FormatTime(audioSource.time);
 
-            if (showCountdown && durationText != null)
+            if (showCountdown && durationText != null && audioSource.clip != null)
             {
                 float remainingTime = audioSource.clip.length - audioSource.time;
                 durationText.text = "-" + FormatTime(remainingTime);
             }
         }
 
-        // Fin de pista -> pasar con transición o repetir uno
-        if (audioSource != null && audioSource.clip != null && !audioSource.isPlaying && audioSource.time >= audioSource.clip.length)
+        // Fin de pista: RepeatOne reinicia, si no, transición a siguiente
+        if (audioSource != null && audioSource.clip != null &&
+            !audioSource.isPlaying && audioSource.time >= audioSource.clip.length)
         {
             if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne)
             {
@@ -99,32 +125,27 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             return;
         }
 
-        // Bloquear teclas si el menú está abierto
+        // Bloquear hotkeys si el menú de canciones está abierto
         if (selectionMenu != null && selectionMenu.IsHidden) return;
 
-        // Pausa
+        // Hotkeys básicas
         if (Input.GetKeyDown(KeyCode.Space)) { TogglePlayPause(); }
-
-        // Saltos rápidos
         if (Input.GetKeyDown(KeyCode.LeftArrow)) { SkipTime(-skiplapse); }
         if (Input.GetKeyDown(KeyCode.RightArrow)) { SkipTime(skiplapse); }
 
-        // Navegación de pistas por teclado: vía transición
+        // Navegación de pistas vía transición
         if (Input.GetKeyDown(KeyCode.P)) { if (transition != null) transition.GoToPrevious(); }
         if (Input.GetKeyDown(KeyCode.N)) { if (transition != null) transition.GoToNext(); }
 
-        // Cambios de modo
+        // Modos
         if (Input.GetKeyDown(KeyCode.S)) { ToggleShuffle(); }
         if (Input.GetKeyDown(KeyCode.L)) { ToggleRepeat(); }
 
-        // Si el estado de reproducción cambia (Play/Pause desde fuera), sincroniza vinilo
-        if (audioSource != null)
+        // Si Play/Pause cambia desde fuera, sincroniza vinilo
+        if (audioSource != null && audioSource.isPlaying != lastPlaying)
         {
-            if (audioSource.isPlaying != lastPlaying)
-            {
-                lastPlaying = audioSource.isPlaying;
-                UpdateVinylSpin();
-            }
+            lastPlaying = audioSource.isPlaying;
+            UpdateVinylSpin();
         }
     }
 
@@ -132,8 +153,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        if (InputLock.IsLocked) return;
-        if (grip == null) return;
+        if (InputLock.IsLocked || grip == null) return;
 
         RectTransform gripRect = grip.GetComponent<RectTransform>();
         if (RectTransformUtility.RectangleContainsScreenPoint(gripRect, eventData.position, eventData.pressEventCamera))
@@ -142,8 +162,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
     public void OnDrag(PointerEventData eventData)
     {
-        if (InputLock.IsLocked) return;
-        if (!isDragging || progressBar == null) return;
+        if (InputLock.IsLocked || !isDragging || progressBar == null) return;
 
         RectTransform progressBarRect = progressBar.GetComponent<RectTransform>();
         if (RectTransformUtility.ScreenPointToLocalPointInRectangle(progressBarRect, eventData.position, eventData.pressEventCamera, out Vector2 localPoint))
@@ -158,8 +177,8 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (!isDragging) return;
         isDragging = false;
-        if (InputLock.IsLocked) return;
-        if (audioSource == null || audioSource.clip == null) return;
+
+        if (InputLock.IsLocked || audioSource == null || audioSource.clip == null) return;
 
         float newTime = Mathf.Clamp(audioSource.clip.length * dragNormalizedPosition, 0, audioSource.clip.length - 0.01f);
         audioSource.time = newTime;
@@ -169,8 +188,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
     public void OnPointerDown(PointerEventData eventData)
     {
-        if (InputLock.IsLocked) return;
-        if (progressBar == null || audioSource == null || audioSource.clip == null) return;
+        if (InputLock.IsLocked || progressBar == null || audioSource == null || audioSource.clip == null) return;
 
         RectTransform progressBarRect = progressBar.GetComponent<RectTransform>();
         if (RectTransformUtility.ScreenPointToLocalPointInRectangle(progressBarRect, eventData.position, eventData.pressEventCamera, out Vector2 localPoint))
@@ -181,7 +199,6 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
             float newTime = Mathf.Clamp(audioSource.clip.length * normalizedPosition, 0, audioSource.clip.length - 0.01f);
             audioSource.time = newTime;
-
             if (!audioSource.isPlaying) audioSource.Play();
             UpdateVinylSpin();
         }
@@ -200,7 +217,6 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
                 audioSource.time = 0f;
             audioSource.Play();
         }
-
         RefreshPlayIcon();
         lastPlaying = audioSource.isPlaying;
         UpdateVinylSpin();
@@ -208,19 +224,18 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
     public void ToggleShuffle()
     {
-        if (InputLock.IsLocked) return;
-        if (queueManager == null) return;
+        if (InputLock.IsLocked || queueManager == null) return;
 
         var newMode = (queueManager.playMode == PlayMode.Shuffle) ? PlayMode.Normal : PlayMode.Shuffle;
         queueManager.SetMode(newMode);
-        audioSource.loop = (newMode == PlayMode.RepeatOne);
+
+        // NO tocamos audioSource.loop aquí: sólo depende de RepeatOne (se gestiona en RefreshModeIndicators)
         RefreshModeIndicators();
     }
 
     public void ToggleRepeat()
     {
-        if (InputLock.IsLocked) return;
-        if (queueManager == null) return;
+        if (InputLock.IsLocked || queueManager == null) return;
 
         PlayMode next = queueManager.playMode switch
         {
@@ -232,22 +247,24 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         };
 
         queueManager.SetMode(next);
-        audioSource.loop = (next == PlayMode.RepeatOne);
-        RefreshModeIndicators();
+        RefreshModeIndicators(); // Ajusta color de botones y loop (RepeatOne)
     }
 
     public void OnDurationTextClick()
     {
-        if (InputLock.IsLocked) return;
-        if (audioSource == null || audioSource.clip == null || durationText == null) return;
+        if (InputLock.IsLocked || audioSource == null || audioSource.clip == null || durationText == null) return;
 
         showCountdown = !showCountdown;
+
         if (showCountdown)
         {
             float remainingTime = audioSource.clip.length - audioSource.time;
             durationText.text = "-" + FormatTime(remainingTime);
         }
-        else { durationText.text = FormatTime(audioSource.clip.length); }
+        else
+        {
+            durationText.text = FormatTime(audioSource.clip.length);
+        }
     }
 
     /* ============================= Helpers UI ============================= */
@@ -255,6 +272,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     private void UpdateProgressBar()
     {
         if (progressBar == null || audioSource == null || audioSource.clip == null) return;
+
         progressBar.value = audioSource.time / audioSource.clip.length;
         UpdateGripPosition(progressBar.value);
     }
@@ -262,6 +280,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     private void UpdateGripPosition(float normalizedPosition)
     {
         if (progressBar == null || grip == null) return;
+
         RectTransform progressBarRect = progressBar.GetComponent<RectTransform>();
         float gripX = Mathf.Lerp(progressBarRect.rect.xMin, progressBarRect.rect.xMax, normalizedPosition);
         Vector3 localPosition = grip.transform.localPosition;
@@ -271,8 +290,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
     private void SkipTime(float seconds)
     {
-        if (InputLock.IsLocked) return;
-        if (audioSource == null || audioSource.clip == null) return;
+        if (InputLock.IsLocked || audioSource == null || audioSource.clip == null) return;
 
         float newTime = audioSource.time + seconds;
 
@@ -280,7 +298,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         if (newTime >= audioSource.clip.length - 0.001f)
         {
             if (transition != null) { transition.GoToNext(); return; }
-            newTime = 0f; // fallback
+            newTime = 0f; // Fallback si no hay transición
         }
         else if (newTime < 0f) newTime = 0f;
 
@@ -302,8 +320,8 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             durationText.text = "-" + FormatTime(remainingTime);
         }
 
-        // Si estaba en pausa y haces seek manual, no forzamos play; pero si está sonando,
-        // asegúrate de que el vinilo sigue girando si no hay vídeo.
+        // Si estaba en pausa y haces seek manual no forzamos play;
+        // si está sonando, asegura vinilo coherente cuando no hay vídeo.
         UpdateVinylSpin();
     }
 
@@ -330,14 +348,17 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         bool rpt1 = (mode == PlayMode.RepeatOne);
         bool rptAll = (mode == PlayMode.RepeatAll);
 
+        // Colores (Color2 activo, gris inactivo)
         shuffleButton.color = shuf ? songLoader.metadata.Color2 : inactiveColor;
         repeatButton.color = (rpt1 || rptAll) ? songLoader.metadata.Color2 : inactiveColor;
 
+        // Propagar color a InteractiveButton (si existe)
         var ibS = shuffleButton.GetComponent<InteractiveButton>();
         var ibR = repeatButton.GetComponent<InteractiveButton>();
         if (ibS) ibS.originalColor = shuffleButton.color;
         if (ibR) ibR.originalColor = repeatButton.color;
 
+        // Loop real sólo en RepeatOne
         if (audioSource) audioSource.loop = rpt1;
     }
 
@@ -347,7 +368,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (InputLock.IsLocked) return;
         if (transition != null) transition.GoToNext();
-        else if (queueManager != null) queueManager.Next(); // fallback
+        else if (queueManager != null) queueManager.Next(); // Fallback
     }
 
     public void OnClickPrevious()
@@ -356,7 +377,41 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
         if (audioSource != null && audioSource.time > 3f) { JumpTime(0f); }
         else if (transition != null) transition.GoToPrevious();
-        else if (queueManager != null) queueManager.Previous(); // fallback
+        else if (queueManager != null) queueManager.Previous(); // Fallback
+    }
+
+    /* ====================== Event Handlers ====================== */
+
+    private void HandlePlayModeChanged(PlayMode _)
+    {
+        RefreshModeIndicators();
+    }
+
+    private void HandleThemeChanged(Color c1, Color c2)
+    {
+        // Los botones activos deben usar el nuevo Color2
+        RefreshModeIndicators();
+    }
+
+    /// <summary>
+    /// Llega cuando SongLoader ha preparado el NUEVO AudioClip.
+    /// Resetea progreso/tiempos y actualiza la duración mostrada (soluciona PROBLEMA 6).
+    /// </summary>
+    private void HandleAudioPrepared(AudioClip clip)
+    {
+        if (clip == null) return;
+
+        // Reset progreso y tiempo actual
+        if (progressBar) { progressBar.value = 0f; UpdateGripPosition(0f); }
+        if (currentTimeText) currentTimeText.text = "0:00";
+
+        // Fijar duración de la nueva pista (contando modo cuenta atrás)
+        if (durationText)
+        {
+            durationText.text = showCountdown
+                ? "-" + FormatTime(clip.length)
+                : FormatTime(clip.length);
+        }
     }
 
     /* ====================== Vinilo: sync con Play/Pause y vídeo ====================== */

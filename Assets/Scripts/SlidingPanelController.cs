@@ -1,8 +1,11 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Events;
 
-public class SlidingPanelController : MonoBehaviour
-{
+public class SlidingPanelController : MonoBehaviour {
+
+    [System.Serializable] public class PanelEvent : UnityEvent { }
+
     [Header("Panel")]
     public RectTransform panel;
     public float hiddenOffset;                // cuánto queda “asomado”
@@ -14,6 +17,10 @@ public class SlidingPanelController : MonoBehaviour
     public bool startHidden = false;
     [Header("Hotkey")]
     public KeyCode toggleKey;
+
+    [Header("Eventos")]
+    public PanelEvent onPanelOpened;
+    public PanelEvent onPanelClosed;
 
     public bool IsHidden { get; private set; }
 
@@ -96,6 +103,7 @@ public class SlidingPanelController : MonoBehaviour
                  .setOnComplete(() => canToggle = true);
         IsHidden = false;
         UpdateRotation();
+        onPanelOpened?.Invoke();
     }
 
     public void Close()
@@ -108,6 +116,7 @@ public class SlidingPanelController : MonoBehaviour
                  .setOnComplete(() => canToggle = true);
         IsHidden = true;
         UpdateRotation();
+        onPanelClosed?.Invoke();
     }
 
     public void OpenInstant()
@@ -117,6 +126,7 @@ public class SlidingPanelController : MonoBehaviour
         panel.anchoredPosition = initialPos;
         IsHidden = false;
         UpdateRotation();
+        onPanelOpened?.Invoke();
     }
 
     public void CloseInstant()
@@ -126,6 +136,7 @@ public class SlidingPanelController : MonoBehaviour
         panel.anchoredPosition = hiddenPos;
         IsHidden = true;
         UpdateRotation();
+        onPanelClosed?.Invoke();
     }
 
     /* ================= Internos ================= */

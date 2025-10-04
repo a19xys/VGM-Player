@@ -63,6 +63,9 @@ public class SongTransitionController : MonoBehaviour
             overlayCanvas.blocksRaycasts = true;
         }
 
+        // Asegurarnos de que ningún botón quede seleccionado
+        if (eventSystem) eventSystem.SetSelectedGameObject(null);
+
         if (skipFader != null) skipFader.BeginFadeOut();
 
         // 1) Colores actual / siguiente para ENTRADA y último bloque
@@ -76,10 +79,10 @@ public class SongTransitionController : MonoBehaviour
 
         // 2) Pintar ENTRADA: cp1, cs1, cp1, cs2
         PaintBlocks(
-            b1: cp1,
-            b2: cs1,
-            b3: cp1,
-            b4: cs2
+            b1: cs1,
+            b2: cp1,
+            b3: cs1,
+            b4: cp2
         );
         PlaceBlocksOffscreen();
 
@@ -115,10 +118,10 @@ public class SongTransitionController : MonoBehaviour
         // 7) Pintar SALIDA en orden inverso 4-3-2-1:
         //    cs2, cp2, cs2, cp2
         PaintBlocks(
-            b1: cp2, // este color irá en el bloque1 pero saldrá al final; no importa el orden de pintado
-            b2: cs2,
-            b3: cp2,
-            b4: cs2
+            b1: cs2, // este color irá en el bloque1 pero saldrá al final; no importa el orden de pintado
+            b2: cp2,
+            b3: cs2,
+            b4: cp2
         );
 
         // 8) SALIDA (descubrir) — orden 4,3,2,1 hacia la derecha

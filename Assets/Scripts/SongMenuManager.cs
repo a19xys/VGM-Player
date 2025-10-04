@@ -5,6 +5,7 @@ using System.IO;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 public class SongMenuManager : MonoBehaviour {
 
@@ -44,6 +45,15 @@ public class SongMenuManager : MonoBehaviour {
         CreatePrefabs();
         BindClickEvents();
         UpdateVisualFeedback();
+
+        // Repintar menú al cambiar de canción/tema
+        if (songLoader != null)
+            songLoader.OnThemeChanged += OnThemeChanged;
+    }
+
+    private void OnDestroy() {
+        if (songLoader != null)
+            songLoader.OnThemeChanged -= OnThemeChanged;
     }
 
     /* ===================== Carga & filtro ===================== */
@@ -96,19 +106,39 @@ public class SongMenuManager : MonoBehaviour {
         filteredSongList.Sort(isAscending ? comparison : (a, b) => comparison(b, a));
     }
 
+    // Manejo de evento de tema
+    private void OnThemeChanged(Color c1, Color c2) {
+        UpdateVisualFeedback();   // botones de orden/filtro y toggle favoritos (usa Color2)
+        RecolorListItems(c1, c2); // repintado de items y corazones
+    }
+
+    // Recolor de prefabs existentes
+    private void RecolorListItems(Color c1, Color c2) {
+        if (!contentParent) return;
+        foreach (Transform child in contentParent) {
+            var ctrl = child.GetComponent<SongPrefabController>();
+            if (ctrl) ctrl.ApplyTheme(c1, c2);
+        }
+    }
+
     /* ===================== Prefabs de lista ===================== */
 
-    private void CreatePrefabs() {
+    private void CreatePrefabs()
+    {
         if (contentParent == null || songPrefab == null) return;
 
+        // Colores vigentes; si aún no hay metadata, usa blanco
+        Color c1 = (songLoader != null && songLoader.metadata != null) ? songLoader.metadata.Color1 : Color.white;
+        Color c2 = (songLoader != null && songLoader.metadata != null) ? songLoader.metadata.Color2 : Color.white;
+
         int i = 1;
-        foreach (var song in filteredSongList) {
+        foreach (var song in filteredSongList)
+        {
             GameObject prefab = Instantiate(songPrefab, contentParent);
             var ctrl = prefab.GetComponent<SongPrefabController>();
-            if (ctrl != null) {
-                // Color base del item con el COLOR1 de la canción actual (instantáneo)
-                Color baseColor = songLoader != null ? songLoader.metadata.Color1 : Color.white;
-                ctrl.Initialize(song, OnSongSelected, FavoriteSong, baseColor);
+            if (ctrl != null)
+            {
+                ctrl.Initialize(song, OnSongSelected, FavoriteSong, c1, c2); // ← pasa C1/C2
             }
             prefab.name = "song_element_" + i++;
         }
@@ -222,6 +252,10 @@ public class SongMenuManager : MonoBehaviour {
 
         int idx = filteredSongList.FindIndex(s => s.FileNumber == songData.FileNumber);
         if (idx < 0) return;
+
+        // Limpiamos la selección para que Space no reenvíe Submit al botón
+        if (EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(null);
 
         // NO cerramos el menú aquí: lo cerrará la transición cuando cubra la pantalla.
         if (transition != null) { transition.PlayFromFilteredIndex(idx); }
