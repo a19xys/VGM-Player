@@ -1,12 +1,10 @@
-using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
 using TMPro;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 /// <summary>
 /// Reproductor: gestiona Play/Pause, barra, tiempos, modos y navegación.
-/// - Soluciona PROBLEMA 6: al prepararse un nuevo AudioClip, actualiza duración y resetea progreso/tiempos.
-/// - Evita lambdas efímeras en eventos para permitir desuscripción limpia.
 /// </summary>
 public class MusicPlayer : MonoBehaviour,
     IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerDownHandler
@@ -33,6 +31,8 @@ public class MusicPlayer : MonoBehaviour,
     public RawImage playButton;                // Botón Play/Pause
     public Texture playTexture;                // Icono Play
     public Texture pauseTexture;               // Icono Pause
+    public Texture repeatAllTexture;           // Icono Repeat All
+    public Texture repeatOneTexture;           // Icono Repeat One
 
     // Estado
     private float dragNormalizedPosition;      // Posición normalizada durante drag
@@ -239,10 +239,10 @@ public class MusicPlayer : MonoBehaviour,
 
         PlayMode next = queueManager.playMode switch
         {
-            PlayMode.Normal => PlayMode.RepeatOne,
-            PlayMode.RepeatOne => PlayMode.RepeatAll,
-            PlayMode.RepeatAll => PlayMode.Normal,
-            PlayMode.Shuffle => PlayMode.RepeatOne,
+            PlayMode.Normal => PlayMode.RepeatAll,
+            PlayMode.Shuffle => PlayMode.RepeatAll,
+            PlayMode.RepeatAll => PlayMode.RepeatOne,
+            PlayMode.RepeatOne => PlayMode.Normal,
             _ => PlayMode.Normal
         };
 
@@ -338,28 +338,34 @@ public class MusicPlayer : MonoBehaviour,
         playButton.texture = audioSource.isPlaying ? pauseTexture : playTexture;
     }
 
-    public void RefreshModeIndicators()
-    {
+    public void RefreshModeIndicators() {
         if (queueManager == null || songLoader == null) return;
         if (repeatButton == null || shuffleButton == null) return;
 
         var mode = queueManager.playMode;
-        bool shuf = (mode == PlayMode.Shuffle);
-        bool rpt1 = (mode == PlayMode.RepeatOne);
-        bool rptAll = (mode == PlayMode.RepeatAll);
+        bool isShuffle = (mode == PlayMode.Shuffle);
+        bool isRepeatOne = (mode == PlayMode.RepeatOne);
+        bool isRepeatAll = (mode == PlayMode.RepeatAll);
 
-        // Colores (Color2 activo, gris inactivo)
-        shuffleButton.color = shuf ? songLoader.metadata.Color2 : inactiveColor;
-        repeatButton.color = (rpt1 || rptAll) ? songLoader.metadata.Color2 : inactiveColor;
+        // Colores (secundario cuando está activo; gris cuando inactivo)
+        Color c2 = songLoader.metadata != null ? songLoader.metadata.Color2 : Color.white;
+        shuffleButton.color = isShuffle ? c2 : inactiveColor;
+        repeatButton.color = (isRepeatOne || isRepeatAll) ? c2 : inactiveColor;
 
-        // Propagar color a InteractiveButton (si existe)
+        // Icono de repeat: RepeatOne vs RepeatAll
+        if (isRepeatOne && repeatOneTexture != null)
+            repeatButton.texture = repeatOneTexture;
+        else if ((isRepeatAll || mode == PlayMode.Normal || mode == PlayMode.Shuffle) && repeatAllTexture != null)
+            repeatButton.texture = repeatAllTexture; // icono base de "loop"
+
+        // Sincroniza InteractiveButton (si lo usas)
         var ibS = shuffleButton.GetComponent<InteractiveButton>();
         var ibR = repeatButton.GetComponent<InteractiveButton>();
         if (ibS) ibS.originalColor = shuffleButton.color;
         if (ibR) ibR.originalColor = repeatButton.color;
 
-        // Loop real sólo en RepeatOne
-        if (audioSource) audioSource.loop = rpt1;
+        // Loop real del AudioSource solo en RepeatOne
+        if (audioSource) audioSource.loop = isRepeatOne;
     }
 
     /* ====================== Botones UI (Next/Prev) ====================== */

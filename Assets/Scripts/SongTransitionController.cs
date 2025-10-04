@@ -30,6 +30,7 @@ public class SongTransitionController : MonoBehaviour
     public AnimationCurve inCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
     public AnimationCurve outCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
+    [SerializeField] private bool initialRevealDone = false;
     private bool busy;
 
     void Awake()
@@ -207,7 +208,6 @@ public class SongTransitionController : MonoBehaviour
         yield return WaitForTween(id4);
     }
 
-    
     private IEnumerator SlideOut()
     {
         var root = RootRect();
@@ -225,10 +225,78 @@ public class SongTransitionController : MonoBehaviour
         yield return WaitForTween(id1);
     }
     
-
     private IEnumerator WaitForTween(int tweenId)
     {
         while (LeanTween.isTweening(tweenId))
             yield return null;
     }
+
+    // Llama a esta pública con el id elegido (p.ej. "0018") para lanzar el revelado inicial.
+    public void StartInitialRevealWithId(string id)
+    {
+        if (!gameObject.activeInHierarchy) { gameObject.SetActive(true); }
+        StartCoroutine(DoInitialReveal(id));
+    }
+
+    private IEnumerator DoInitialReveal(string id)
+    {
+        if (initialRevealDone || string.IsNullOrEmpty(id)) yield break;
+
+        busy = true;
+        InputLock.Lock();
+        if (eventSystem) eventSystem.sendNavigationEvents = false;
+
+        // 0) Alinear cola SIN reproducir (por si dependes de currentIndex en otros sitios)
+        if (queue) queue.SetCurrentByFileNumberNoPlayback(id);
+
+        // 1) Cargar metadatos primero (instantáneo) -> ya tenemos Color1/Color2
+        loader.LoadSongMetadataInstant(id);
+        var cp2 = loader.metadata.Color1;
+        var cs2 = loader.metadata.Color2;
+
+        // 2) Colorear YA los 4 bloques con la paleta de salida (evita verlos en blanco)
+        //    (esto es lo que el usuario verá mientras esperamos a que se prepare el audio/vídeo)
+        PaintBlocks(
+            b1: cs2,
+            b2: cp2,
+            b3: cs2,
+            b4: cp2
+        );
+
+        // 3) Encender overlay y dejar los bloques ya centrados (listos para SlideOut)
+        if (overlayCanvas)
+        {
+            overlayCanvas.alpha = 1f;
+            overlayCanvas.blocksRaycasts = true;
+        }
+        MoveX(block1, 0f); MoveX(block2, 0f); MoveX(block3, 0f); MoveX(block4, 0f);
+        Canvas.ForceUpdateCanvases(); // asegura que el tintado se vea este mismo frame
+
+        // Cerrar menú / abrir paneles bajo cobertura
+        ForceCloseSelectionMenu();
+        ForceOpenPanels();
+        if (dualRemixMarquee) dualRemixMarquee.ResetAndStart();
+
+        // 4) Preparar audio y vídeo (puede tardar). El overlay ya muestra los colores correctos.
+        yield return StartCoroutine(loader.PrepareAudioClipRoutine(id, autoPlay: false));
+        yield return StartCoroutine(loader.PrepareVideosRoutine(id, autoPlay: false));
+
+        // 5) Arrancar en el MISMO frame y descubrir
+        if (skipFader != null) skipFader.RestoreIfSilent();
+        loader.StartPlayback();
+
+        yield return SlideOut();
+
+        if (overlayCanvas)
+        {
+            overlayCanvas.alpha = 0f;
+            overlayCanvas.blocksRaycasts = false;
+        }
+        if (eventSystem) eventSystem.sendNavigationEvents = true;
+
+        InputLock.Unlock();
+        busy = false;
+        initialRevealDone = true;
+    }
+
 }

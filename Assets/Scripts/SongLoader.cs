@@ -42,6 +42,16 @@ public class SongLoader : MonoBehaviour
     [Header("Remix panel")]
     public GameObject remixObject;
 
+    [Header("First song")]
+    public bool randomizeFirstSong = true;
+    [SerializeField] private string firstSongId = "";
+
+    [Header("Queue")]
+    public TrackQueueManager queueManager; // para sincronizar el primer tema con la cola
+
+    [Header("Transition")]
+    public SongTransitionController transition;
+
     [Header("Vinilo")]
     public VinylDiscController vinyl;  // raíz del vinilo (RawImage circular que rota)
 
@@ -55,26 +65,99 @@ public class SongLoader : MonoBehaviour
     private string basePath;
     private readonly List<string> videoPaths = new List<string>();
     private int currentVideoIndex = -1;
+    private System.Random _rng = new System.Random();
 
     private Texture2D currentLogoTex;  // por si lo muestras en UI
     private Texture2D currentDiscTex;  // disc{id}.png
 
-    [SerializeField] private string firstSongId = ""; // opcional, vacío si no quieres reproducir nada al arrancar
-
     /* =========================================================
      *                     CICLO DE VIDA
      * ========================================================= */
-    void Awake()
-    {
+    void Awake() {
         basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "VGM Hall of Fame");
 
-        if (!string.IsNullOrEmpty(firstSongId))
-        {
-            // Carga directa estilo "single player" (sin transición)
-            LoadSongMetadataInstant(firstSongId);
-            StartCoroutine(PrepareAudioClipRoutine(firstSongId, autoPlay: true));
-            StartCoroutine(PrepareVideosRoutine(firstSongId, autoPlay: true));
+        // Arranque diferido: esperamos a que el menú (vía queue) tenga lista filtrada disponible.
+        if (randomizeFirstSong) { StartCoroutine(StartRandomFirstSongWhenReady()); }
+        else if (!string.IsNullOrEmpty(firstSongId)) { StartCoroutine(StartSpecificFirstSongWhenReady(firstSongId)); }
+    }
+
+    /* =========================================================
+    *                   COLA DE CANCIONES
+    * ========================================================= */
+    private IEnumerator WaitUntilMenuReady() {
+        // Si tenemos queue y menú, esperamos a que haya lista filtrada.
+        if (queueManager != null && queueManager.menu != null) {
+            while (queueManager.menu.GetFiltered() == null || queueManager.menu.FilteredCount() == 0)
+                yield return null;
         }
+        // Si no hay queue/menu, seguimos sin esperar.
+    }
+
+    private IEnumerator StartRandomFirstSongWhenReady()
+    {
+        yield return WaitUntilMenuReady();
+
+        string id = null;
+        if (queueManager != null && queueManager.menu != null && queueManager.menu.FilteredCount() > 0)
+        {
+            var list = queueManager.menu.GetFiltered();
+            int idx = _rng.Next(list.Count);
+            id = list[idx].FileNumber;
+        }
+        else
+        {
+            var jsonFiles = Directory.GetFiles(basePath, "info*.json");
+            if (jsonFiles.Length > 0)
+            {
+                int pick = _rng.Next(jsonFiles.Length);
+                string filename = Path.GetFileNameWithoutExtension(jsonFiles[pick]); // "infoXYZ"
+                id = filename.Substring(4); // "XYZ"
+            }
+        }
+
+        if (string.IsNullOrEmpty(id)) yield break;
+
+        // 🔸 Nuevo: delega en la transición para que haga SOLO la salida
+        if (transition != null)
+        {
+            transition.StartInitialRevealWithId(id);
+        }
+        else if (queueManager != null)
+        {
+            // Fallback clásico si no has asignado la transición
+            queueManager.SyncWithSongId(id);
+        }
+        else
+        {
+            LoadAndPlayDirect(id);
+        }
+    }
+
+    private IEnumerator StartSpecificFirstSongWhenReady(string id)
+    {
+        yield return WaitUntilMenuReady();
+        if (string.IsNullOrEmpty(id)) yield break;
+
+        if (transition != null)
+        {
+            transition.StartInitialRevealWithId(id);
+        }
+        else if (queueManager != null)
+        {
+            queueManager.SyncWithSongId(id);
+        }
+        else
+        {
+            LoadAndPlayDirect(id);
+        }
+    }
+
+    private void LoadAndPlayDirect(string id)
+    {
+        // Comportamiento original: cargar y reproducir directamente
+        LoadSongMetadataInstant(id);
+        StartCoroutine(PrepareAudioClipRoutine(id, autoPlay: true));
+        StartCoroutine(PrepareVideosRoutine(id, autoPlay: true));
     }
 
     /* =========================================================

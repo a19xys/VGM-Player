@@ -94,16 +94,16 @@ public class MenuToggleButton : MonoBehaviour, IPointerEnterHandler, IPointerExi
     /* ======================= Hover ======================= */
     public void OnPointerEnter(PointerEventData eventData)
     {
+        MoveTo(originalLocalPos + moveDirection, moveDuration);
         if (!slidingMenu || slidingMenu.IsMenuVisible) return; // hover sólo con menú oculto
         FadeTo(visibleAlpha);
-        MoveTo(originalLocalPos + moveDirection, moveDuration);
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
+        MoveTo(originalLocalPos, returnDuration);
         if (!slidingMenu || slidingMenu.IsMenuVisible) return;
         FadeTo(hiddenAlpha);
-        MoveTo(originalLocalPos, returnDuration);
     }
 
     /* =================== Eventos del menú =================== */

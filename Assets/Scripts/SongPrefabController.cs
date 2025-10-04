@@ -13,6 +13,7 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
     // Cache de tema vigente
     private Color primary;   // Color1
     private Color secondary; // Color2
+    private Color primaryDarken;     // Color1 más oscuro
 
     public void Initialize(
         SongData data,
@@ -24,6 +25,7 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
         songData = data;
         primary = primaryColor;
         secondary = secondaryColor;
+        primaryDarken = Darken(primary, 0.25f);
 
         titleText.text = songData.Title;
         gameText.text = songData.Game;
@@ -34,7 +36,7 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
         if (bg) bg.color = primary;
 
         // Corazón = Color2 si favorito, Color1 si no
-        if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primary;
+        if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primaryDarken;
 
         // Componente botón del prefab
         var btn = GetComponent<Button>();
@@ -48,7 +50,7 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
         GetComponent<Button>().onClick.AddListener(() => onClickCallback?.Invoke(songData));
         heartIcon.GetComponent<Button>().onClick.AddListener(() => {
             songData.IsFavorite = !songData.IsFavorite;
-            if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primary;
+            if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primaryDarken;
             onFavoriteCallback?.Invoke(songData);
         });
     }
@@ -58,11 +60,18 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
     {
         primary = newPrimary;
         secondary = newSecondary;
+        primaryDarken = Darken(newPrimary, 0.25f);
 
         var bg = GetComponent<RawImage>();
         if (bg) bg.color = primary;
 
-        if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primary;
+        if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primaryDarken;
+    }
+
+    private static Color Darken(Color c, float t)
+    {
+        // t en [0..1]. 0 = sin cambio; 1 = negro.
+        return Color.Lerp(c, Color.black, Mathf.Clamp01(t));
     }
 
     // Subrayado hover sin cambios
