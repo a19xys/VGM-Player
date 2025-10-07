@@ -111,7 +111,8 @@ public class LyricsController : MonoBehaviour
         if (lyricsText) lyricsText.text = string.Empty;
     }
 
-    private bool TryParseTimestampToSeconds(string s, out float secondsOut) {
+    private bool TryParseTimestampToSeconds(string s, out float secondsOut)
+    {
         // Acepta M:SS, MM:SS, y SS con decimales: M:SS.s, M:SS.ss, M:SS.sss
         secondsOut = 0f;
 

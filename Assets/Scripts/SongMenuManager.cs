@@ -7,7 +7,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
-public class SongMenuManager : MonoBehaviour {
+public class SongMenuManager : MonoBehaviour
+{
 
     [Header("Refs")]
     public SongLoader songLoader;
@@ -39,7 +40,8 @@ public class SongMenuManager : MonoBehaviour {
     private bool isAscending = true;
     private bool showingFavorites = false;
 
-    void Start() {
+    void Start()
+    {
         LoadSongs();
         ApplyFilterAndSorting();
         CreatePrefabs();
@@ -51,25 +53,29 @@ public class SongMenuManager : MonoBehaviour {
             songLoader.OnThemeChanged += OnThemeChanged;
     }
 
-    private void OnDestroy() {
+    private void OnDestroy()
+    {
         if (songLoader != null)
             songLoader.OnThemeChanged -= OnThemeChanged;
     }
 
     /* ===================== Carga & filtro ===================== */
 
-    private void LoadSongs() {
+    private void LoadSongs()
+    {
         jsonDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "VGM Hall of Fame");
         string[] jsonFiles = Directory.GetFiles(jsonDirectory, "info*.json");
 
         songDataList.Clear();
 
-        foreach (string jsonFile in jsonFiles) {
+        foreach (string jsonFile in jsonFiles)
+        {
             string jsonContent = File.ReadAllText(jsonFile);
             SongLoader.SongMetadata metadata = JsonUtility.FromJson<SongLoader.SongMetadata>(jsonContent);
             string fileNumber = Path.GetFileNameWithoutExtension(jsonFile).Substring(4); // "infoXYZ" -> "XYZ"
 
-            var songData = new SongData {
+            var songData = new SongData
+            {
                 FileNumber = fileNumber,
                 Title = metadata.Title,
                 Game = metadata.Game,
@@ -84,14 +90,16 @@ public class SongMenuManager : MonoBehaviour {
         songDataList.Sort((a, b) => int.Parse(a.FileNumber).CompareTo(int.Parse(b.FileNumber)));
     }
 
-    private void ApplyFilterAndSorting() {
+    private void ApplyFilterAndSorting()
+    {
         // Filtro favoritos
         filteredSongList = showingFavorites ? songDataList.FindAll(s => s.IsFavorite)
                                             : new List<SongData>(songDataList);
 
         // Orden actual
         Comparison<SongData> comparison;
-        switch (lastSortCriterion) {
+        switch (lastSortCriterion)
+        {
             case "title":
                 comparison = (a, b) => string.Compare(a.Title, b.Title, StringComparison.Ordinal);
                 break;
@@ -107,15 +115,18 @@ public class SongMenuManager : MonoBehaviour {
     }
 
     // Manejo de evento de tema
-    private void OnThemeChanged(Color c1, Color c2) {
+    private void OnThemeChanged(Color c1, Color c2)
+    {
         UpdateVisualFeedback();   // botones de orden/filtro y toggle favoritos (usa Color2)
         RecolorListItems(c1, c2); // repintado de items y corazones
     }
 
     // Recolor de prefabs existentes
-    private void RecolorListItems(Color c1, Color c2) {
+    private void RecolorListItems(Color c1, Color c2)
+    {
         if (!contentParent) return;
-        foreach (Transform child in contentParent) {
+        foreach (Transform child in contentParent)
+        {
             var ctrl = child.GetComponent<SongPrefabController>();
             if (ctrl) ctrl.ApplyTheme(c1, c2);
         }
@@ -144,7 +155,8 @@ public class SongMenuManager : MonoBehaviour {
         }
     }
 
-    private void RecreatePrefabs() {
+    private void RecreatePrefabs()
+    {
         ClearPrefabs();
         CreatePrefabs();
 
@@ -155,7 +167,8 @@ public class SongMenuManager : MonoBehaviour {
         if (musicPlayer != null) musicPlayer.RefreshModeIndicators();
     }
 
-    private void ClearPrefabs() {
+    private void ClearPrefabs()
+    {
         if (contentParent == null) return;
         for (int i = contentParent.childCount - 1; i >= 0; i--)
             Destroy(contentParent.GetChild(i).gameObject);
@@ -163,14 +176,16 @@ public class SongMenuManager : MonoBehaviour {
 
     /* ===================== Eventos UI ===================== */
 
-    private void BindClickEvents() {
+    private void BindClickEvents()
+    {
         if (sortByIdTMP != null) sortByIdTMP.GetComponent<Button>().onClick.AddListener(() => SortByCriterion("id"));
         if (sortByTitleTMP != null) sortByTitleTMP.GetComponent<Button>().onClick.AddListener(() => SortByCriterion("title"));
         if (sortByGameTMP != null) sortByGameTMP.GetComponent<Button>().onClick.AddListener(() => SortByCriterion("game"));
         if (showFavoritesImage != null) showFavoritesImage.GetComponent<Button>().onClick.AddListener(ToggleFavorites);
     }
 
-    private void SortByCriterion(string criterion) {
+    private void SortByCriterion(string criterion)
+    {
         if (InputLock.IsLocked) return;
 
         if (lastSortCriterion == criterion) isAscending = !isAscending;
@@ -181,7 +196,8 @@ public class SongMenuManager : MonoBehaviour {
         RecreatePrefabs();
     }
 
-    private void ToggleFavorites() {
+    private void ToggleFavorites()
+    {
         if (InputLock.IsLocked) return;
 
         showingFavorites = !showingFavorites;
@@ -190,31 +206,37 @@ public class SongMenuManager : MonoBehaviour {
         RecreatePrefabs();
     }
 
-    private void FavoriteSong(SongData songData) {
+    private void FavoriteSong(SongData songData)
+    {
         if (InputLock.IsLocked) return;
 
         UpdateJsonFavorite(songData);
         Debug.Log($"Favorito cambiado: {songData.Title}, Estado: {(songData.IsFavorite ? "Favorito" : "No favorito")}");
     }
 
-    private void UpdateJsonFavorite(SongData songData) {
+    private void UpdateJsonFavorite(SongData songData)
+    {
         string jsonFile = Path.Combine(jsonDirectory, $"info{songData.FileNumber}.json");
 
-        if (File.Exists(jsonFile)) {
+        if (File.Exists(jsonFile))
+        {
             string jsonContent = File.ReadAllText(jsonFile);
             var metadata = JsonUtility.FromJson<SongLoader.SongMetadata>(jsonContent);
             metadata.Favorite = songData.IsFavorite;
 
             string updated = JsonUtility.ToJson(metadata, true);
             File.WriteAllText(jsonFile, updated);
-        } else {
+        }
+        else
+        {
             Debug.LogError($"No se encontró el archivo JSON para {songData.Title}");
         }
     }
 
     /* ===================== Feedback visual ===================== */
 
-    public void UpdateVisualFeedback() {
+    public void UpdateVisualFeedback()
+    {
         Color defaultColor = Color.white;
         Color activeColor = (songLoader != null) ? songLoader.metadata.Color2 : Color.white;
 
@@ -224,8 +246,10 @@ public class SongMenuManager : MonoBehaviour {
         UpdateFavoritesVisual();
     }
 
-    private void UpdateButtonVisual(RawImage image, TextMeshProUGUI tmp, bool isActive, bool ascending, Color activeColor, Color defaultColor) {
-        if (image != null) {
+    private void UpdateButtonVisual(RawImage image, TextMeshProUGUI tmp, bool isActive, bool ascending, Color activeColor, Color defaultColor)
+    {
+        if (image != null)
+        {
             image.texture = isActive ? texture2 : texture1;
             image.color = isActive ? activeColor : defaultColor;
 
@@ -236,7 +260,8 @@ public class SongMenuManager : MonoBehaviour {
         if (tmp != null) tmp.color = isActive ? activeColor : defaultColor;
     }
 
-    private void UpdateFavoritesVisual() {
+    private void UpdateFavoritesVisual()
+    {
         Color defaultColor = Color.white;
         Color activeColor = (songLoader != null) ? songLoader.metadata.Color2 : Color.white;
 
@@ -246,7 +271,8 @@ public class SongMenuManager : MonoBehaviour {
 
     /* ===================== Selección de canción ===================== */
 
-    private void OnSongSelected(SongData songData) {
+    private void OnSongSelected(SongData songData)
+    {
         if (InputLock.IsLocked) return;
         if (songData == null) return;
 
@@ -259,9 +285,11 @@ public class SongMenuManager : MonoBehaviour {
 
         // NO cerramos el menú aquí: lo cerrará la transición cuando cubra la pantalla.
         if (transition != null) { transition.PlayFromFilteredIndex(idx); }
-        else {
+        else
+        {
             if (queueManager != null) queueManager.PlayFromFilteredIndex(idx);
-            else if (songLoader != null) {
+            else if (songLoader != null)
+            {
                 songLoader.LoadSongMetadataInstant(songData.FileNumber);
                 StartCoroutine(songLoader.PrepareAudioClipRoutine(songData.FileNumber, true));
                 StartCoroutine(songLoader.PrepareVideosRoutine(songData.FileNumber, true));
@@ -281,7 +309,8 @@ public class SongMenuManager : MonoBehaviour {
 /* ===================== DTO ===================== */
 
 [System.Serializable]
-public class SongData {
+public class SongData
+{
     public string FileNumber;
     public string Title;
     public string Game;

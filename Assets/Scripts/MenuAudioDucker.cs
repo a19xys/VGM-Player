@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class MenuAudioDucker : MonoBehaviour
 {
@@ -18,7 +18,7 @@ public class MenuAudioDucker : MonoBehaviour
     {
         if (!audioSource) return;
 
-        // Si ya está por debajo o igual al destino, no hacemos nada
+        // Si ya estï¿½ por debajo o igual al destino, no hacemos nada
         if (audioSource.volume <= duckTo + 0.0001f)
         {
             unduckedVolume = null;
@@ -34,7 +34,7 @@ public class MenuAudioDucker : MonoBehaviour
     {
         if (!audioSource) return;
 
-        // Solo restaurar si guardamos un volumen “original” válido (> duckTo)
+        // Solo restaurar si guardamos un volumen ï¿½originalï¿½ vï¿½lido (> duckTo)
         if (unduckedVolume.HasValue && unduckedVolume.Value > duckTo + 0.0001f)
         {
             StartTween(audioSource.volume, unduckedVolume.Value);

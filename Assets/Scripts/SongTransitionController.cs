@@ -1,4 +1,4 @@
-using System.Collections;
+ï»¿using System.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -10,8 +10,8 @@ public class SongTransitionController : MonoBehaviour
     public SongLoader loader;                       // Debe exponer LoadSongMetadataInstant(string), PrepareAudioClipRoutine(string,bool), PrepareVideosRoutine(string,bool), StartPlayback()
     public SlidingMenuController selectionMenu;     // Lo cerraremos al cubrir la pantalla
     public SlidingPanelController[] panelsToOpen;   // Paneles info/remix/controles para abrir bajo cobertura
-    public EventSystem eventSystem;                 // Para desactivar navegación
-    public SongSkipFader skipFader;                 // Fundido del volumen de la canción al pasar a otra
+    public EventSystem eventSystem;                 // Para desactivar navegaciï¿½n
+    public SongSkipFader skipFader;                 // Fundido del volumen de la canciï¿½n al pasar a otra
     public DualRemixMarquee dualRemixMarquee;
 
     [Header("Overlay container")]
@@ -45,31 +45,33 @@ public class SongTransitionController : MonoBehaviour
 
     public bool IsBusy() => busy;
 
-    /* =================== API pública =================== */
+    /* =================== API pï¿½blica =================== */
     public void GoToNext() { if (!busy) StartCoroutine(DoTransition(+1, -1)); }
     public void GoToPrevious() { if (!busy) StartCoroutine(DoTransition(-1, -1)); }
     public void PlayFromFilteredIndex(int index) { if (!busy) StartCoroutine(DoTransition(0, index)); }
     public void GoToAbsoluteIndex(int index) => PlayFromFilteredIndex(index); // compat
 
-    /* =================== Núcleo =================== */
-    private IEnumerator DoTransition(int advance, int absoluteIndex) {
+    /* =================== Nï¿½cleo =================== */
+    private IEnumerator DoTransition(int advance, int absoluteIndex)
+    {
 
         busy = true;
 
         InputLock.Lock();
 
         if (eventSystem) eventSystem.sendNavigationEvents = false;
-        if (overlayCanvas) {
+        if (overlayCanvas)
+        {
             overlayCanvas.alpha = 1f;
             overlayCanvas.blocksRaycasts = true;
         }
 
-        // Asegurarnos de que ningún botón quede seleccionado
+        // Asegurarnos de que ningï¿½n botï¿½n quede seleccionado
         if (eventSystem) eventSystem.SetSelectedGameObject(null);
 
         if (skipFader != null) skipFader.BeginFadeOut();
 
-        // 1) Colores actual / siguiente para ENTRADA y último bloque
+        // 1) Colores actual / siguiente para ENTRADA y ï¿½ltimo bloque
         var cur = loader != null ? loader.metadata : null;
         var nextMet = queue != null ? queue.PeekMetadata(advance, absoluteIndex) : null;
 
@@ -90,12 +92,12 @@ public class SongTransitionController : MonoBehaviour
         // 3) ENTRADA (cubrir)
         yield return SlideIn();
 
-        // 4) Con pantalla cubierta: cerrar menú y abrir paneles (sin animación, para evitar flicker)
+        // 4) Con pantalla cubierta: cerrar menï¿½ y abrir paneles (sin animaciï¿½n, para evitar flicker)
         ForceCloseSelectionMenu();
         ForceOpenPanels();
         dualRemixMarquee.ResetAndStart();
 
-        // 5) Preparar TODO (sin reproducir todavía)
+        // 5) Preparar TODO (sin reproducir todavï¿½a)
         //    - Resolver id destino
         string id = queue.ResolveTargetFileNumber(advance, absoluteIndex);
         if (!string.IsNullOrEmpty(id))
@@ -104,7 +106,7 @@ public class SongTransitionController : MonoBehaviour
             loader.LoadSongMetadataInstant(id);
             // Preparar audio (clip asignado, sin Play)
             yield return StartCoroutine(loader.PrepareAudioClipRoutine(id, autoPlay: false));
-            // Preparar vídeo (VideoPlayer.Prepare o fallback vinilo listo, sin Play/Spin)
+            // Preparar vï¿½deo (VideoPlayer.Prepare o fallback vinilo listo, sin Play/Spin)
             yield return StartCoroutine(loader.PrepareVideosRoutine(id, autoPlay: false));
 
             // (Opcional) recalcular cp2/cs2 por si el Peek y el JSON difieren
@@ -112,20 +114,20 @@ public class SongTransitionController : MonoBehaviour
             cs2 = loader.metadata.Color2;
         }
 
-        // 6) Arranque sincronizado (audio y vídeo/vinilo en el MISMO frame)
+        // 6) Arranque sincronizado (audio y vï¿½deo/vinilo en el MISMO frame)
         if (skipFader != null) skipFader.RestoreIfSilent();
         loader.StartPlayback();
 
         // 7) Pintar SALIDA en orden inverso 4-3-2-1:
         //    cs2, cp2, cs2, cp2
         PaintBlocks(
-            b1: cs2, // este color irá en el bloque1 pero saldrá al final; no importa el orden de pintado
+            b1: cs2, // este color irï¿½ en el bloque1 pero saldrï¿½ al final; no importa el orden de pintado
             b2: cp2,
             b3: cs2,
             b4: cp2
         );
 
-        // 8) SALIDA (descubrir) — orden 4,3,2,1 hacia la derecha
+        // 8) SALIDA (descubrir) ï¿½ orden 4,3,2,1 hacia la derecha
         yield return SlideOut();
 
         // 9) Desbloqueo
@@ -224,14 +226,14 @@ public class SongTransitionController : MonoBehaviour
         int id1 = LeanTween.moveX(block1, w, slideDuration).setEase(outCurve).id;
         yield return WaitForTween(id1);
     }
-    
+
     private IEnumerator WaitForTween(int tweenId)
     {
         while (LeanTween.isTweening(tweenId))
             yield return null;
     }
 
-    // Llama a esta pública con el id elegido (p.ej. "0018") para lanzar el revelado inicial.
+    // Llama a esta pï¿½blica con el id elegido (p.ej. "0018") para lanzar el revelado inicial.
     public void StartInitialRevealWithId(string id)
     {
         if (!gameObject.activeInHierarchy) { gameObject.SetActive(true); }
@@ -249,13 +251,13 @@ public class SongTransitionController : MonoBehaviour
         // 0) Alinear cola SIN reproducir (por si dependes de currentIndex en otros sitios)
         if (queue) queue.SetCurrentByFileNumberNoPlayback(id);
 
-        // 1) Cargar metadatos primero (instantáneo) -> ya tenemos Color1/Color2
+        // 1) Cargar metadatos primero (instantï¿½neo) -> ya tenemos Color1/Color2
         loader.LoadSongMetadataInstant(id);
         var cp2 = loader.metadata.Color1;
         var cs2 = loader.metadata.Color2;
 
         // 2) Colorear YA los 4 bloques con la paleta de salida (evita verlos en blanco)
-        //    (esto es lo que el usuario verá mientras esperamos a que se prepare el audio/vídeo)
+        //    (esto es lo que el usuario verï¿½ mientras esperamos a que se prepare el audio/vï¿½deo)
         PaintBlocks(
             b1: cs2,
             b2: cp2,
@@ -272,12 +274,12 @@ public class SongTransitionController : MonoBehaviour
         MoveX(block1, 0f); MoveX(block2, 0f); MoveX(block3, 0f); MoveX(block4, 0f);
         Canvas.ForceUpdateCanvases(); // asegura que el tintado se vea este mismo frame
 
-        // Cerrar menú / abrir paneles bajo cobertura
+        // Cerrar menï¿½ / abrir paneles bajo cobertura
         ForceCloseSelectionMenu();
         ForceOpenPanels();
         if (dualRemixMarquee) dualRemixMarquee.ResetAndStart();
 
-        // 4) Preparar audio y vídeo (puede tardar). El overlay ya muestra los colores correctos.
+        // 4) Preparar audio y vï¿½deo (puede tardar). El overlay ya muestra los colores correctos.
         yield return StartCoroutine(loader.PrepareAudioClipRoutine(id, autoPlay: false));
         yield return StartCoroutine(loader.PrepareVideosRoutine(id, autoPlay: false));
 

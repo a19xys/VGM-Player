@@ -2,7 +2,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
-public class InteractiveButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler {
+public class InteractiveButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
+{
 
     private Vector3 originalScale;
 
@@ -17,39 +18,48 @@ public class InteractiveButton : MonoBehaviour, IPointerEnterHandler, IPointerEx
 
     private bool isPressed = false; // Indica si el botón está presionado
 
-    void Start() {
+    void Start()
+    {
         // Guardar la escala y color originales
         originalScale = transform.localScale;
-        if (TryGetComponent(out RawImage rawImage)) {
+        if (TryGetComponent(out RawImage rawImage))
+        {
             originalColor = rawImage.color;
         }
     }
 
-    public void OnPointerEnter(PointerEventData eventData) {
+    public void OnPointerEnter(PointerEventData eventData)
+    {
         if (isPressed) return; // No aplicar efecto hover si está presionado
 
         // Aumentar el tamaño y cambiar el color
         LeanTween.scale(gameObject, originalScale * hoverScaleFactor, animationDuration).setEaseOutQuad();
-        if (TryGetComponent(out RawImage rawImage)) {
-            if (rawImage.color == new Color(171 / 255f, 171 / 255f, 171 / 255f)) {
+        if (TryGetComponent(out RawImage rawImage))
+        {
+            if (rawImage.color == new Color(171 / 255f, 171 / 255f, 171 / 255f))
+            {
                 rawImage.color = hoverColor;
             }
         }
     }
 
-    public void OnPointerExit(PointerEventData eventData) {
+    public void OnPointerExit(PointerEventData eventData)
+    {
         if (isPressed) return; // No revertir si está presionado
 
         // Restaurar tamaño y color originales
         LeanTween.scale(gameObject, originalScale, animationDuration).setEaseOutQuad();
-        if (TryGetComponent(out RawImage rawImage)) {
+        if (TryGetComponent(out RawImage rawImage))
+        {
             rawImage.color = originalColor;
         }
     }
 
-    public void OnPointerDown(PointerEventData eventData) {
+    public void OnPointerDown(PointerEventData eventData)
+    {
         // Cambiar color mientras esté presionado el botón
-        if (TryGetComponent(out RawImage rawImage)) {
+        if (TryGetComponent(out RawImage rawImage))
+        {
             rawImage.color = clickColor;
         }
 
@@ -58,17 +68,22 @@ public class InteractiveButton : MonoBehaviour, IPointerEnterHandler, IPointerEx
         LeanTween.scale(gameObject, originalScale * pressedScaleFactor, animationDuration).setEaseOutQuad();
     }
 
-    public void OnPointerUp(PointerEventData eventData) {
+    public void OnPointerUp(PointerEventData eventData)
+    {
         isPressed = false;
 
-        if (TryGetComponent(out RawImage rawImage)) {
+        if (TryGetComponent(out RawImage rawImage))
+        {
             rawImage.color = originalColor;
         }
 
         // Comprobación de si continúa el puntero sobre el botón
-        if (eventData.pointerEnter == gameObject) {
+        if (eventData.pointerEnter == gameObject)
+        {
             LeanTween.scale(gameObject, originalScale * hoverScaleFactor, animationDuration).setEaseOutQuad();
-        } else {
+        }
+        else
+        {
             LeanTween.scale(gameObject, originalScale, animationDuration).setEaseOutQuad();
         }
     }

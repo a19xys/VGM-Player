@@ -3,7 +3,8 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
 
-public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler {
+public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+{
     public TextMeshProUGUI titleText;
     public TextMeshProUGUI gameText;
     public TextMeshProUGUI idText;
@@ -40,7 +41,8 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
 
         // Componente botón del prefab
         var btn = GetComponent<Button>();
-        if (btn != null) {
+        if (btn != null)
+        {
             var nav = btn.navigation;
             nav.mode = Navigation.Mode.None; // Evita focus/navegación por teclado
             btn.navigation = nav;

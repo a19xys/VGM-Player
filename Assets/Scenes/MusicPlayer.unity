@@ -2558,6 +2558,10 @@ MonoBehaviour:
   videoPlayer: {fileID: 1931415871}
   gm_background: {fileID: 1309092447}
   audioSource: {fileID: 890772282}
+  allowedVideoExtensions:
+  - .mp4
+  - .webm
+  - .mkv
   color1RawImages:
   - {fileID: 2122735804011783958}
   - {fileID: 3855544645345564316}
@@ -6572,7 +6576,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: -212, y: 373}
-  m_SizeDelta: {x: 471.666, y: 199.55298}
+  m_SizeDelta: {x: 471.66602, y: 199.55298}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &1907938889
 MonoBehaviour:

@@ -1,16 +1,17 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
 
-public class SlidingPanelController : MonoBehaviour {
+public class SlidingPanelController : MonoBehaviour
+{
 
     [System.Serializable] public class PanelEvent : UnityEvent { }
 
     [Header("Panel")]
     public RectTransform panel;
-    public float hiddenOffset;                // cuánto queda “asomado”
+    public float hiddenOffset;                // cuï¿½nto queda ï¿½asomadoï¿½
     public float animationDuration = 0.5f;
-    public Vector2 hiddenDirection;           // hacia dónde se oculta
+    public Vector2 hiddenDirection;           // hacia dï¿½nde se oculta
     public Transform rotationTarget;
 
     [Header("Behaviour")]
@@ -32,16 +33,16 @@ public class SlidingPanelController : MonoBehaviour {
     /* ================= Ciclo ================= */
     void Awake()
     {
-        // No calculamos nada aún; lo haremos en OnEnable/Start dependiendo de si el GO
-        // está activo o se activa más tarde.
+        // No calculamos nada aï¿½n; lo haremos en OnEnable/Start dependiendo de si el GO
+        // estï¿½ activo o se activa mï¿½s tarde.
     }
 
     void OnEnable()
     {
         // Cuando el panel se activa por primera vez (o reaparece),
-        // su Rect puede cambiar: recalculamos geometría de forma robusta.
+        // su Rect puede cambiar: recalculamos geometrï¿½a de forma robusta.
         RecalculateGeometry(keepHiddenState: false, applySnap: false);
-        // Snap al estado inicial deseado sólo la primera vez:
+        // Snap al estado inicial deseado sï¿½lo la primera vez:
         if (!initialized)
         {
             if (startHidden) { panel.anchoredPosition = hiddenPos; IsHidden = true; }
@@ -51,8 +52,8 @@ public class SlidingPanelController : MonoBehaviour {
         }
         else
         {
-            // Si ya estaba inicializado, mantenemos el estado actual y lo “snapemos”
-            // a sus nuevas coordenadas (por si tamaño cambió).
+            // Si ya estaba inicializado, mantenemos el estado actual y lo ï¿½snapemosï¿½
+            // a sus nuevas coordenadas (por si tamaï¿½o cambiï¿½).
             SnapToCurrentState();
         }
     }
@@ -76,13 +77,13 @@ public class SlidingPanelController : MonoBehaviour {
             TryTogglePanel();
     }
 
-    /* ================= API pública ================= */
+    /* ================= API pï¿½blica ================= */
     public void OnExternalContentPossiblyChangedAndBecameActive()
     {
-        // Llamar cuando activas el GO o cambias su contenido/tamaño (p.ej., al pasar de no-remix a remix).
+        // Llamar cuando activas el GO o cambias su contenido/tamaï¿½o (p.ej., al pasar de no-remix a remix).
         // 1) Forzar layout para que rect.width/height sean correctos
         ForceRebuildLayout();
-        // 2) Recalcular geometría manteniendo estado visible/oculto actual y snapear
+        // 2) Recalcular geometrï¿½a manteniendo estado visible/oculto actual y snapear
         RecalculateGeometry(keepHiddenState: true, applySnap: true);
     }
 
@@ -97,7 +98,7 @@ public class SlidingPanelController : MonoBehaviour {
     {
         if (!panel || !canToggle) return;
         canToggle = false;
-        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tamaño cambió
+        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tamaï¿½o cambiï¿½
         LeanTween.move(panel, initialPos, animationDuration)
                  .setEase(LeanTweenType.easeInOutQuart)
                  .setOnComplete(() => canToggle = true);
@@ -110,7 +111,7 @@ public class SlidingPanelController : MonoBehaviour {
     {
         if (!panel || !canToggle) return;
         canToggle = false;
-        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tamaño cambió
+        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tamaï¿½o cambiï¿½
         LeanTween.move(panel, hiddenPos, animationDuration)
                  .setEase(LeanTweenType.easeInOutQuart)
                  .setOnComplete(() => canToggle = true);
@@ -155,14 +156,14 @@ public class SlidingPanelController : MonoBehaviour {
         // Guardamos el estado
         bool prevHidden = IsHidden;
 
-        // Antes de leer tamaños, nos aseguramos de tener initialPos definido:
+        // Antes de leer tamaï¿½os, nos aseguramos de tener initialPos definido:
         if (initialPos == default)
             initialPos = panel.anchoredPosition;
 
-        // Calcular hiddenPos con el tamaño actual
+        // Calcular hiddenPos con el tamaï¿½o actual
         hiddenPos = ComputeHiddenPosition();
 
-        // Restaurar estado si así se pide
+        // Restaurar estado si asï¿½ se pide
         if (keepHiddenState)
             IsHidden = prevHidden;
 
@@ -187,7 +188,7 @@ public class SlidingPanelController : MonoBehaviour {
     private void ForceRebuildLayout()
     {
         if (!panel) return;
-        // Por si hay LayoutGroups/ContentSizeFitter en jerarquía
+        // Por si hay LayoutGroups/ContentSizeFitter en jerarquï¿½a
         LayoutRebuilder.ForceRebuildLayoutImmediate(panel);
         var p = panel.parent as RectTransform;
         if (p) LayoutRebuilder.ForceRebuildLayoutImmediate(p);

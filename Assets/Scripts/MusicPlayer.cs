@@ -338,7 +338,8 @@ public class MusicPlayer : MonoBehaviour,
         playButton.texture = audioSource.isPlaying ? pauseTexture : playTexture;
     }
 
-    public void RefreshModeIndicators() {
+    public void RefreshModeIndicators()
+    {
         if (queueManager == null || songLoader == null) return;
         if (repeatButton == null || shuffleButton == null) return;
 

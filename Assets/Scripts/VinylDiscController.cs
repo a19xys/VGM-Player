@@ -1,18 +1,18 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
 /// Vinilo UI que:
-/// - Rota con aceleración/frenado suave (ramp).
-/// - Muestra la carátula recortada al centro (uvRect).
-/// - Se recorta visualmente con una máscara circular (Image + Mask).
+/// - Rota con aceleraciï¿½n/frenado suave (ramp).
+/// - Muestra la carï¿½tula recortada al centro (uvRect).
+/// - Se recorta visualmente con una mï¿½scara circular (Image + Mask).
 ///
-/// Jerarquía recomendada:
+/// Jerarquï¿½a recomendada:
 ///   VinylRoot (RectTransform)  [este script en el root]
 ///     - CircleMask (Image con sprite circular) + Mask (ShowMaskGraphic: a gusto)
-///         - discArt (RawImage)   <-- aquí se pinta la carátula
+///         - discArt (RawImage)   <-- aquï¿½ se pinta la carï¿½tula
 ///
-/// No tocamos pivots/tamaños en runtime (adiós “jitter”).
+/// No tocamos pivots/tamaï¿½os en runtime (adiï¿½s ï¿½jitterï¿½).
 /// </summary>
 public class VinylDiscController : MonoBehaviour
 {
@@ -21,19 +21,19 @@ public class VinylDiscController : MonoBehaviour
     public RectTransform rotor;
     [Tooltip("Image con sprite circular + componente Mask (padre del discArt)")]
     public RawImage circleMask;
-    [Tooltip("RawImage hijo (dentro de la máscara) donde se pinta la carátula")]
+    [Tooltip("RawImage hijo (dentro de la mï¿½scara) donde se pinta la carï¿½tula")]
     public RawImage discArt;
 
     [Header("Spin")]
-    [Tooltip("RPM objetivo cuando está reproduciendo")]
+    [Tooltip("RPM objetivo cuando estï¿½ reproduciendo")]
     public float rpm = 20f;
     [Tooltip("Segundos que tarda en pasar de 0->rpm o de rpm->0")]
     public float spinRampSeconds = 0.6f;
 
     // Estado
-    private bool desiredSpin;        // objetivo lógico (true=reproduciendo)
+    private bool desiredSpin;        // objetivo lï¿½gico (true=reproduciendo)
     private float currentRPM;        // estado actual suavizado
-    private float angleZ;            // rotación acumulada
+    private float angleZ;            // rotaciï¿½n acumulada
 
     void Reset()
     {
@@ -68,19 +68,19 @@ public class VinylDiscController : MonoBehaviour
         }
     }
 
-    /// <summary>Activa/desactiva la rotación objetivo (con rampa suave).</summary>
+    /// <summary>Activa/desactiva la rotaciï¿½n objetivo (con rampa suave).</summary>
     public void SetSpinDesired(bool play)
     {
         desiredSpin = play;
     }
 
-    /// <summary>Muestra el vinilo y, si desiredSpin=true, seguirá acelerando.</summary>
+    /// <summary>Muestra el vinilo y, si desiredSpin=true, seguirï¿½ acelerando.</summary>
     public void Show()
     {
         if (!gameObject.activeSelf) gameObject.SetActive(true);
     }
 
-    /// <summary>Oculta el vinilo y detiene giro (sin animación y sin perder ángulo).</summary>
+    /// <summary>Oculta el vinilo y detiene giro (sin animaciï¿½n y sin perder ï¿½ngulo).</summary>
     public void Hide()
     {
         desiredSpin = false;
@@ -89,7 +89,7 @@ public class VinylDiscController : MonoBehaviour
     }
 
     /// <summary>
-    /// Establece la carátula. Centra y recorta a cuadrado con UVs (no deforma).
+    /// Establece la carï¿½tula. Centra y recorta a cuadrado con UVs (no deforma).
     /// </summary>
     public void SetArtwork(Texture tex)
     {
@@ -128,8 +128,8 @@ public class VinylDiscController : MonoBehaviour
     }
 
     /// <summary>
-    /// Si el Image de la máscara no tiene Mask, lo añade y lo configura.
-    /// (Necesario para que el arte NO se salga del círculo.)
+    /// Si el Image de la mï¿½scara no tiene Mask, lo aï¿½ade y lo configura.
+    /// (Necesario para que el arte NO se salga del cï¿½rculo.)
     /// </summary>
     private void EnsureMask()
     {
@@ -138,13 +138,13 @@ public class VinylDiscController : MonoBehaviour
         var mask = circleMask.GetComponent<Mask>();
         if (!mask) mask = circleMask.gameObject.AddComponent<Mask>();
 
-        // Tu decides si quieres ver el gráfico de la máscara (círculo) o sólo usarla:
-        // true = se ve el sprite circular además del arte recortado
+        // Tu decides si quieres ver el grï¿½fico de la mï¿½scara (cï¿½rculo) o sï¿½lo usarla:
+        // true = se ve el sprite circular ademï¿½s del arte recortado
         // false = el sprite no se dibuja, pero recorta igual
         mask.showMaskGraphic = true; // o false, a tu gusto
     }
 
-    /// <summary>Opcional: fija el ángulo manualmente.</summary>
+    /// <summary>Opcional: fija el ï¿½ngulo manualmente.</summary>
     public void SetAngle(float zDegrees)
     {
         angleZ = zDegrees;

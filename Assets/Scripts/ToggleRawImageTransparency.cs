@@ -1,14 +1,16 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class ToggleRawImageTransparency : MonoBehaviour {
+public class ToggleRawImageTransparency : MonoBehaviour
+{
 
     public RawImage targetImage; // El RawImage objetivo
     public float animationDuration = 0.3f; // Duración de la animación
     private bool isActive = false; // Estado actual del RawImage
 
     // Método para activar y hacer FadeIn
-    public void ActivateAndFadeIn() {
+    public void ActivateAndFadeIn()
+    {
         if (targetImage == null || isActive) return;
 
         targetImage.gameObject.SetActive(true);
@@ -21,7 +23,8 @@ public class ToggleRawImageTransparency : MonoBehaviour {
     }
 
     // Método para hacer FadeOut y desactivar
-    public void FadeOutAndDeactivate() {
+    public void FadeOutAndDeactivate()
+    {
         if (targetImage == null || !isActive) return;
 
         Color currentColor = targetImage.color;

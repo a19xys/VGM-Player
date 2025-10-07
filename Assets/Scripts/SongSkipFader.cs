@@ -1,10 +1,10 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 /// <summary>
-/// Fader para cambios de canción:
+/// Fader para cambios de canciï¿½n:
 /// - Fadea el AudioSource a 0 (sin tocar el slider).
-/// - Restaura el volumen original justo antes de reproducir la nueva canción.
-/// - Si el usuario cambió el volumen durante el fade, se respeta (no se pisa).
+/// - Restaura el volumen original justo antes de reproducir la nueva canciï¿½n.
+/// - Si el usuario cambiï¿½ el volumen durante el fade, se respeta (no se pisa).
 /// </summary>
 public class SongSkipFader : MonoBehaviour
 {
@@ -12,14 +12,14 @@ public class SongSkipFader : MonoBehaviour
     public AudioSource audioSource;
 
     [Header("Fade")]
-    [Tooltip("Duración por defecto del fade-out al pasar de canción.")]
+    [Tooltip("Duraciï¿½n por defecto del fade-out al pasar de canciï¿½n.")]
     public float fadeSeconds = 0.5f;
 
     private float cachedPreFadeVolume = 1f;
     private int tweenId = -1;
     private bool isFading = false;
 
-    /// <summary>Inicia un fade a 0. Si no pasas duración, usa FadeSeconds.</summary>
+    /// <summary>Inicia un fade a 0. Si no pasas duraciï¿½n, usa FadeSeconds.</summary>
     public void BeginFadeOut(float seconds = -1f)
     {
         if (!audioSource) return;
@@ -27,12 +27,13 @@ public class SongSkipFader : MonoBehaviour
         if (seconds < 0f) seconds = fadeSeconds;
 
         // Cancela tween anterior si lo hubiera
-        if (tweenId != -1) {
+        if (tweenId != -1)
+        {
             LeanTween.cancel(tweenId);
             tweenId = -1;
         }
 
-        // Guardamos el volumen actual para restaurarlo después.
+        // Guardamos el volumen actual para restaurarlo despuï¿½s.
         cachedPreFadeVolume = audioSource.volume;
         isFading = true;
 
@@ -43,7 +44,7 @@ public class SongSkipFader : MonoBehaviour
             .setEase(LeanTweenType.easeInOutQuad)
             .setOnUpdate(v =>
             {
-                if (audioSource) audioSource.volume = v; // ¡No tocamos slider!
+                if (audioSource) audioSource.volume = v; // ï¿½No tocamos slider!
             })
             .setOnComplete(() =>
             {
@@ -54,14 +55,15 @@ public class SongSkipFader : MonoBehaviour
     }
 
     /// <summary>
-    /// Restaura el volumen si el AudioSource quedó “silencio” por el fade.
-    /// Si el usuario cambió el volumen (ya > 0), no hacemos nada.
-    /// Llamar justo antes de arrancar la nueva canción (StartPlayback).
+    /// Restaura el volumen si el AudioSource quedï¿½ ï¿½silencioï¿½ por el fade.
+    /// Si el usuario cambiï¿½ el volumen (ya > 0), no hacemos nada.
+    /// Llamar justo antes de arrancar la nueva canciï¿½n (StartPlayback).
     /// </summary>
-    public void RestoreIfSilent() {
+    public void RestoreIfSilent()
+    {
         if (!audioSource) return;
 
-        // 1) SIEMPRE cancelamos el tween en curso para que no “arrastre” a la nueva canción.
+        // 1) SIEMPRE cancelamos el tween en curso para que no ï¿½arrastreï¿½ a la nueva canciï¿½n.
         if (tweenId != -1)
         {
             LeanTween.cancel(tweenId);
@@ -69,7 +71,7 @@ public class SongSkipFader : MonoBehaviour
             isFading = false;
         }
 
-        // 2) Si el volumen está prácticamente en silencio, restauramos el volumen previo.
+        // 2) Si el volumen estï¿½ prï¿½cticamente en silencio, restauramos el volumen previo.
         //    Si ya es > 0, significa que el usuario/ducker lo ha tocado: lo respetamos.
         if (audioSource.volume <= 0.001f)
             audioSource.volume = cachedPreFadeVolume;

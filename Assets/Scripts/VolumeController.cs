@@ -6,7 +6,8 @@ using UnityEngine.UI;
 /// - Respeta InputLock: ignora atajos de teclado y callbacks mientras hay transición.
 /// - Expone SetVolumeExternal para actualizar desde código si hiciera falta.
 /// </summary>
-public class VolumeController : MonoBehaviour {
+public class VolumeController : MonoBehaviour
+{
 
     [Header("Refs")]
     public SlidingMenuController selectionMenu;
@@ -19,15 +20,18 @@ public class VolumeController : MonoBehaviour {
     private bool isMuted = false;
     private float previousVolume = 1f;
 
-    void Start() {
-        if (volumeSlider != null && audioSource != null) {
+    void Start()
+    {
+        if (volumeSlider != null && audioSource != null)
+        {
             volumeSlider.value = audioSource.volume;
             volumeSlider.onValueChanged.AddListener(SetVolume);
         }
         UpdateMuteButtonTexture();
     }
 
-    void Update() {
+    void Update()
+    {
         // Bloqueo por transición
         if (InputLock.IsLocked) return;
         // Bloque por menú abierto
@@ -40,31 +44,39 @@ public class VolumeController : MonoBehaviour {
 
     /* ================== API pública ================== */
 
-    public void ToggleMute() {
+    public void ToggleMute()
+    {
         if (InputLock.IsLocked) return;
         if (audioSource == null) return;
 
         isMuted = !isMuted;
 
-        if (isMuted) {
+        if (isMuted)
+        {
             if (audioSource.volume > 0f) previousVolume = audioSource.volume;
             audioSource.volume = 0f;
             if (volumeSlider) volumeSlider.SetValueWithoutNotify(0f);
-        } else {
+        }
+        else
+        {
             audioSource.volume = previousVolume;
             if (volumeSlider) volumeSlider.SetValueWithoutNotify(previousVolume);
         }
         UpdateMuteButtonTexture();
     }
 
-    public void SetVolume(float value) {
+    public void SetVolume(float value)
+    {
         if (InputLock.IsLocked) return;
         if (audioSource == null) return;
 
         // 0 -> marcar muteado; >0 -> desmutear
-        if (Mathf.Approximately(value, 0f)) {
+        if (Mathf.Approximately(value, 0f))
+        {
             isMuted = true;
-        } else {
+        }
+        else
+        {
             if (isMuted) isMuted = false;
             previousVolume = value; // recuerda el último valor “bueno”
         }
@@ -76,7 +88,8 @@ public class VolumeController : MonoBehaviour {
     /// <summary>
     /// Usar si quieres fijar volumen desde código sin disparar onValueChanged del slider.
     /// </summary>
-    public void SetVolumeExternal(float value) {
+    public void SetVolumeExternal(float value)
+    {
         value = Mathf.Clamp01(value);
         if (audioSource) audioSource.volume = value;
         if (volumeSlider) volumeSlider.SetValueWithoutNotify(value);
@@ -89,7 +102,8 @@ public class VolumeController : MonoBehaviour {
 
     /* ================== Internos ================== */
 
-    private void AdjustVolume(float delta) {
+    private void AdjustVolume(float delta)
+    {
         if (audioSource == null) return;
 
         float newVolume = Mathf.Round(Mathf.Clamp(audioSource.volume + delta, 0f, 1f) * 10f) * 0.1f;
@@ -97,7 +111,8 @@ public class VolumeController : MonoBehaviour {
         if (volumeSlider) volumeSlider.SetValueWithoutNotify(newVolume);
 
         if (Mathf.Approximately(newVolume, 0f)) { isMuted = true; }
-        else {
+        else
+        {
             if (isMuted) isMuted = false;
             previousVolume = newVolume;
         }
@@ -105,7 +120,8 @@ public class VolumeController : MonoBehaviour {
         UpdateMuteButtonTexture();
     }
 
-    private void UpdateMuteButtonTexture() {
+    private void UpdateMuteButtonTexture()
+    {
         if (!muteButton) return;
         muteButton.texture = isMuted ? mutedTexture : unmutedTexture;
     }

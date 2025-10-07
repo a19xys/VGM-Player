@@ -3,7 +3,8 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
 
-public class InteractiveElement : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler {
+public class InteractiveElement : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+{
     private Vector3 originalScale;
 
     [HideInInspector]
@@ -16,13 +17,15 @@ public class InteractiveElement : MonoBehaviour, IPointerEnterHandler, IPointerE
 
     private bool isClicked = false;
 
-    void Start() {
+    void Start()
+    {
         // Guardar la escala y color originales
         originalScale = transform.localScale;
         if (TryGetComponent(out RawImage rawImage)) { originalColor = rawImage.color; }
     }
 
-    public void OnPointerEnter(PointerEventData eventData) {
+    public void OnPointerEnter(PointerEventData eventData)
+    {
 
         if (isClicked) return; // No aplicar efecto hover si está en estado de clic
 
@@ -32,7 +35,8 @@ public class InteractiveElement : MonoBehaviour, IPointerEnterHandler, IPointerE
 
     }
 
-    public void OnPointerExit(PointerEventData eventData) {
+    public void OnPointerExit(PointerEventData eventData)
+    {
 
         if (isClicked) return; // No revertir si está en estado de clic
 

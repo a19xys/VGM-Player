@@ -32,6 +32,10 @@ public class SongLoader : MonoBehaviour
     [Header("Audio Source")]
     public AudioSource audioSource;
 
+    [Header("Video formats")]
+    [Tooltip("Extensiones admitidas, en orden de preferencia.")]
+    public string[] allowedVideoExtensions = new[] { ".mp4", ".webm", ".mkv" };
+
     [Header("UI Elements (Colors)")]
     public List<RawImage> color1RawImages;
     public List<Image> color1Images;
@@ -58,6 +62,7 @@ public class SongLoader : MonoBehaviour
     public event System.Action<Color, Color> OnThemeChanged;
     public event System.Action<SongMetadata> OnMetadataLoaded;
     public event System.Action<AudioClip> OnAudioPrepared;
+    public event System.Action OnVideoReallyReady;
 
     [HideInInspector] public SongMetadata metadata;
 
@@ -66,6 +71,7 @@ public class SongLoader : MonoBehaviour
     private readonly List<string> videoPaths = new List<string>();
     private int currentVideoIndex = -1;
     private System.Random _rng = new System.Random();
+    private bool videoFirstFrameReady;
 
     private Texture2D currentLogoTex;  // por si lo muestras en UI
     private Texture2D currentDiscTex;  // disc{id}.png
@@ -73,7 +79,8 @@ public class SongLoader : MonoBehaviour
     /* =========================================================
      *                     CICLO DE VIDA
      * ========================================================= */
-    void Awake() {
+    void Awake()
+    {
         basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "VGM Hall of Fame");
 
         // Arranque diferido: esperamos a que el menú (vía queue) tenga lista filtrada disponible.
@@ -84,9 +91,11 @@ public class SongLoader : MonoBehaviour
     /* =========================================================
     *                   COLA DE CANCIONES
     * ========================================================= */
-    private IEnumerator WaitUntilMenuReady() {
+    private IEnumerator WaitUntilMenuReady()
+    {
         // Si tenemos queue y menú, esperamos a que haya lista filtrada.
-        if (queueManager != null && queueManager.menu != null) {
+        if (queueManager != null && queueManager.menu != null)
+        {
             while (queueManager.menu.GetFiltered() == null || queueManager.menu.FilteredCount() == 0)
                 yield return null;
         }
@@ -191,7 +200,8 @@ public class SongLoader : MonoBehaviour
         if (remixObject) remixObject.SetActive(!string.IsNullOrWhiteSpace(title2Text.text));
 
         // Reajustar geometría del panel de remix si existe y está activo ahora
-        if (remixObject && remixObject.activeInHierarchy) {
+        if (remixObject && remixObject.activeInHierarchy)
+        {
             var sp = remixObject.GetComponent<SlidingPanelController>();
             // Forzar que el layout se estabilice y que el panel use el tamaño correcto
             if (sp != null) { sp.OnExternalContentPossiblyChangedAndBecameActive(); }
@@ -333,10 +343,6 @@ public class SongLoader : MonoBehaviour
     /* =========================================================
      *                         VÍDEO
      * ========================================================= */
-    /// <summary>
-    /// Busca vídeos 'video{id}_*.mp4'. Si hay, prepara VideoPlayer (sin Play si autoPlay=false).
-    /// Si no hay, configura modo sin vídeo (vinilo visible pero sin girar si autoPlay=false).
-    /// </summary>
     public IEnumerator PrepareVideosRoutine(string id, bool autoPlay = false)
     {
         if (videoPlayer == null)
@@ -349,38 +355,121 @@ public class SongLoader : MonoBehaviour
             basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "VGM Hall of Fame");
 
         videoPaths.Clear();
-        string[] files = Directory.GetFiles(basePath, $"video{id}_*.mp4");
 
-        if (files.Length == 0)
+        // 1) Construir lista de candidatos: video{id}_*.EXT para cada extensión permitida
+        List<string> candidates = new List<string>(32);
+        if (allowedVideoExtensions == null || allowedVideoExtensions.Length == 0)
         {
+            // fallback defensivo
+            allowedVideoExtensions = new[] { ".mp4", ".webm" };
+        }
+        foreach (var ext in allowedVideoExtensions)
+        {
+            // Buscar archivos video{id}_*.ext
+            // Importante: Directory.GetFiles no acepta OR, así que iteramos extensiones.
+            string pattern = $"video{id}_*{ext}";
+            string[] found = Directory.GetFiles(basePath, pattern);
+            if (found != null && found.Length > 0)
+                candidates.AddRange(found);
+        }
+
+        if (candidates.Count == 0)
+        {
+            // Sin vídeos → modo “no vídeo”
             ApplyNoVideoModePreparedOnly();
             yield break;
         }
 
-        videoPaths.AddRange(files);
+        // 2) Guardar candidatos y preparar el primero
+        videoPaths.AddRange(candidates);
         currentVideoIndex = 0;
 
+        // Limpiar/añadir callback de fin
         videoPlayer.loopPointReached -= OnVideoEnded;
         videoPlayer.loopPointReached += OnVideoEnded;
 
-        // Activa contenedor vídeo, oculta vinilo
+        // Activar contenedor de vídeo y ocultar vinilo
         if (videoContainer != null) videoContainer.SetActive(true);
         if (vinyl != null) vinyl.Hide();
 
-        // Color de fondo por robustez
-        if (gm_background != null)
+        // Color de fondo con Color2 (robustez)
+        if (gm_background != null && metadata != null)
         {
             var c = gm_background.color;
             gm_background.color = new Color(metadata.Color2.r, metadata.Color2.g, metadata.Color2.b, c.a);
         }
 
-        // Preparar primer vídeo
+        // 3) Asignar URL del primer candidato y preparar
         videoPlayer.url = videoPaths[currentVideoIndex];
+
+        // (Opcional, pero recomendado): permitir saltar frames si el decodificador va justo
+        videoPlayer.skipOnDrop = true;
+
         videoPlayer.Prepare();
-        while (!videoPlayer.isPrepared) yield return null;
+        while (!videoPlayer.isPrepared)
+            yield return null;
 
         if (autoPlay) videoPlayer.Play();
         else videoPlayer.Pause(); // preparado, listo para StartPlayback()
+    }
+
+    private void OnVideoFrameReady(VideoPlayer source, long frameIdx)
+    {
+        // En cuanto recibamos al menos un frame válido, marcamos listo.
+        // Nota: muchos vídeos empiezan en frame 0; otros reportan 1. Nos da igual, con >=0 vale.
+        if (frameIdx >= 0) videoFirstFrameReady = true;
+    }
+
+    private IEnumerator PrimeFirstFrame(bool autoPlay)
+    {
+        // Arrancamos para forzar la decodificación del primer frame.
+        // Si autoPlay=false, luego pausaremos en 0 para el arranque sincronizado con audio.
+        videoPlayer.Play();
+
+        const float hardTimeout = 3.0f; // seguridad contra drivers raros
+        float t0 = Time.realtimeSinceStartup;
+
+        // Espera preferente por evento frameReady
+        while (!videoFirstFrameReady && (Time.realtimeSinceStartup - t0) < hardTimeout)
+            yield return null;
+
+        if (!videoFirstFrameReady)
+        {
+            // Respaldo por polling: algunos dispositivos no emiten frameReady de forma fiable.
+            // Considera "listo" cuando tengamos frame > 0 o time > 0 con texture válida durante un par de frames.
+            int consecutive = 0;
+            while ((Time.realtimeSinceStartup - t0) < hardTimeout && consecutive < 2)
+            {
+                bool ok = (videoPlayer.texture != null) &&
+                          (videoPlayer.frame > 0 || videoPlayer.time > 0.01f);
+                consecutive = ok ? (consecutive + 1) : 0;
+                yield return null;
+            }
+            videoFirstFrameReady = (consecutive >= 2);
+        }
+
+        // Si no queremos autoPlay todavía, “armamos” para sync:
+        // — Pausamos, reseteamos a 0 para que StartPlayback arranque todo en el mismo frame.
+        if (!autoPlay)
+        {
+            videoPlayer.Pause();
+            // Algunos backends necesitan fijar ambos:
+            videoPlayer.time = 0.0;
+            videoPlayer.frame = 0;
+            // Forzamos un pequeño “poke” de canvas/material para evitar negros en el frame 0.
+            Canvas.ForceUpdateCanvases();
+            yield return null; // un frame para estabilizar
+        }
+        // Si autoPlay=true, lo dejamos corriendo y devolvemos control.
+    }
+
+    private void OnDestroy()
+    {
+        if (videoPlayer != null)
+        {
+            videoPlayer.loopPointReached -= OnVideoEnded;
+            videoPlayer.frameReady -= OnVideoFrameReady;
+        }
     }
 
     private void OnVideoEnded(VideoPlayer vp)

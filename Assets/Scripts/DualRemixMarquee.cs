@@ -1,26 +1,26 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using TMPro;
 
 /// <summary>
-/// Marquee dual y sincronizado para dos TMP (versión con baseline fijo).
-/// - Captura la posición de inicio REAL (baseline) una sola vez por rótulo.
-/// - En cada reset de canción, fuerza ambos a su baseline antes de medir.
-/// - Máquina de estados robusta: PauseStart -> Left -> PauseEnd -> Right.
+/// Marquee dual y sincronizado para dos TMP (versiï¿½n con baseline fijo).
+/// - Captura la posiciï¿½n de inicio REAL (baseline) una sola vez por rï¿½tulo.
+/// - En cada reset de canciï¿½n, fuerza ambos a su baseline antes de medir.
+/// - Mï¿½quina de estados robusta: PauseStart -> Left -> PauseEnd -> Right.
 /// </summary>
 public class DualRemixMarquee : MonoBehaviour
 {
     [Header("Refs")]
     public TextMeshProUGUI textA;
     public TextMeshProUGUI textB;
-    [Tooltip("Viewport visible (soft mask). Si se deja vacío, se usa el padre de textA.")]
+    [Tooltip("Viewport visible (soft mask). Si se deja vacï¿½o, se usa el padre de textA.")]
     public RectTransform viewport;
-    [Tooltip("Opcional: pausa el scroll cuando la música está en pausa.")]
+    [Tooltip("Opcional: pausa el scroll cuando la mï¿½sica estï¿½ en pausa.")]
     public AudioSource audioSource;
 
     [Header("Behaviour")]
     public float speed = 28f;          // px/s
     public float pauseSeconds = 3f;    // pausa al inicio y final
-    public float edgePadding = 16f;    // holgura extra para que no “raspe” el borde
+    public float edgePadding = 16f;    // holgura extra para que no ï¿½raspeï¿½ el borde
 
     private enum Phase { PauseStart, ScrollLeft, PauseEnd, ScrollRight }
     private Phase phase = Phase.PauseStart;
@@ -30,11 +30,11 @@ public class DualRemixMarquee : MonoBehaviour
     private Line b = new Line();
     private bool initialized;
     private bool manualPause;   // hover u otra pausa externa
-    private bool active;        // si el ciclo está en marcha
+    private bool active;        // si el ciclo estï¿½ en marcha
 
     void OnEnable()
     {
-        // Al reactivar, medimos en el próximo Update.
+        // Al reactivar, medimos en el prï¿½ximo Update.
         initialized = false;
     }
 
@@ -108,16 +108,16 @@ public class DualRemixMarquee : MonoBehaviour
         }
     }
 
-    /* ====================== API pública ====================== */
+    /* ====================== API pï¿½blica ====================== */
 
     /// <summary>
-    /// Llamar con la pantalla cubierta al cambiar de canción/remix.
+    /// Llamar con la pantalla cubierta al cambiar de canciï¿½n/remix.
     /// Fuerza ambos textos a su baseline inicial y reinicia ciclo.
     /// </summary>
     public void ResetAndStart()
     {
         active = true;
-        initialized = false; // provocamos el “hard reset” en el próximo Update
+        initialized = false; // provocamos el ï¿½hard resetï¿½ en el prï¿½ximo Update
     }
 
     public void StopScrolling() => active = false;
@@ -160,12 +160,12 @@ public class DualRemixMarquee : MonoBehaviour
         a.Measure(viewport, edgePadding);
         b.Measure(viewport, edgePadding);
 
-        // Colocar ambos al “inicio lógico” (startX == baseline)
+        // Colocar ambos al ï¿½inicio lï¿½gicoï¿½ (startX == baseline)
         a.SnapToStart();
         b.SnapToStart();
     }
 
-    /* ====================== Línea ====================== */
+    /* ====================== Lï¿½nea ====================== */
 
     private class Line
     {
@@ -173,11 +173,11 @@ public class DualRemixMarquee : MonoBehaviour
         public RectTransform textRect;
         public RectTransform parentRect;
 
-        // baseline fijo (la posición de layout original, capturada 1 vez)
+        // baseline fijo (la posiciï¿½n de layout original, capturada 1 vez)
         private bool hasBaseline;
         private float baseStartX;
 
-        // métricas del ciclo actual
+        // mï¿½tricas del ciclo actual
         public float startX;     // arranque del ciclo (igual a baseline)
         public float endX;       // destino hacia la izquierda
         public bool needsScroll; // si hace falta desplazamiento
@@ -194,9 +194,9 @@ public class DualRemixMarquee : MonoBehaviour
         }
 
         /// <summary>
-        /// Captura la posición de inicio de layout (baseline) una sola vez.
-        /// Si forceSnap es true y ya había baseline, NO se sobreescribe;
-        /// sólo forzamos el Rect a ese baseline al llamar a SnapToBaseline().
+        /// Captura la posiciï¿½n de inicio de layout (baseline) una sola vez.
+        /// Si forceSnap es true y ya habï¿½a baseline, NO se sobreescribe;
+        /// sï¿½lo forzamos el Rect a ese baseline al llamar a SnapToBaseline().
         /// </summary>
         public void CaptureBaselineIfNeeded(bool forceSnap)
         {
@@ -205,7 +205,7 @@ public class DualRemixMarquee : MonoBehaviour
                 baseStartX = textRect.anchoredPosition.x;
                 hasBaseline = true;
             }
-            // Si forceSnap es true, el “snap” real se hace fuera (SnapToBaseline()).
+            // Si forceSnap es true, el ï¿½snapï¿½ real se hace fuera (SnapToBaseline()).
         }
 
         public void SnapToBaseline()

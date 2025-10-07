@@ -2,7 +2,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Globalization;
 
-public class SongPlaybackManager : MonoBehaviour {
+public class SongPlaybackManager : MonoBehaviour
+{
 
     public SongLoader songLoader;
     public MusicPlayer musicPlayer;
@@ -16,26 +17,33 @@ public class SongPlaybackManager : MonoBehaviour {
     private float highlightEnd = 0f;
     private float songDuration = 0f;
 
-    void Start() {
+    void Start()
+    {
         if (highlightButton != null) { highlightButton.onClick.AddListener(JumpToHighlight); }
 
         // Suscripción a eventos del loader
-        if (songLoader != null) {
+        if (songLoader != null)
+        {
             songLoader.OnMetadataLoaded += HandleMetadataLoaded;
             songLoader.OnAudioPrepared += HandleAudioPrepared;
         }
 
         // Si ya hay algo cargado al arrancar (firstSongId), inicializa
-        if (audioSource != null && audioSource.clip != null) {
+        if (audioSource != null && audioSource.clip != null)
+        {
             songDuration = audioSource.clip.length;
-        } if (songLoader != null && songLoader.metadata != null) {
+        }
+        if (songLoader != null && songLoader.metadata != null)
+        {
             ParseHighlightFromString(songLoader.metadata.Highlight);
         }
         UpdateHighlightVisual();
     }
 
-    public void LoadSong() {
-        if (audioSource.clip == null) {
+    public void LoadSong()
+    {
+        if (audioSource.clip == null)
+        {
             Debug.LogError("No hay un AudioClip asignado al AudioSource.");
             return;
         }
@@ -46,10 +54,12 @@ public class SongPlaybackManager : MonoBehaviour {
         UpdateHighlightVisual();
     }
 
-    private void ParseHighlight() {
+    private void ParseHighlight()
+    {
         string highlight = songLoader.metadata.Highlight; // Obtener el campo Highlight
 
-        if (string.IsNullOrEmpty(highlight) || !highlight.Contains("-")) {
+        if (string.IsNullOrEmpty(highlight) || !highlight.Contains("-"))
+        {
             highlightStart = highlightEnd = 0f; // Sin Highlight
             return;
         }
@@ -59,7 +69,8 @@ public class SongPlaybackManager : MonoBehaviour {
         highlightEnd = ParseTime(times[1]);
     }
 
-    private float ParseTime(string time) {
+    private float ParseTime(string time)
+    {
         // Acepta M:SS, M:SS.s, M:SS.ss, M:SS.sss (punto o coma)
         time = time.Trim().Replace(',', '.');
         string[] parts = time.Split(':');
@@ -72,7 +83,8 @@ public class SongPlaybackManager : MonoBehaviour {
         return 0f;
     }
 
-    private void UpdateHighlightVisual() {
+    private void UpdateHighlightVisual()
+    {
         if (highlightImage == null || songSlider == null || songDuration <= 0) return;
 
         float highlightStartNormalized = highlightStart / songDuration;
@@ -90,31 +102,38 @@ public class SongPlaybackManager : MonoBehaviour {
     }
 
 
-    public void JumpToHighlight() {
+    public void JumpToHighlight()
+    {
         if (audioSource != null && highlightStart > 0f) { musicPlayer.JumpTime(highlightStart); }
     }
 
-    private void HandleMetadataLoaded(SongLoader.SongMetadata m) {
+    private void HandleMetadataLoaded(SongLoader.SongMetadata m)
+    {
         // (re)parsear el highlight de los metadatos nuevos
         ParseHighlightFromString(m != null ? m.Highlight : null);
         // Aún no sabemos la duración si el clip no está preparado; la fijaremos en HandleAudioPrepared
     }
 
-    private void HandleAudioPrepared(AudioClip clip) {
+    private void HandleAudioPrepared(AudioClip clip)
+    {
         if (clip == null) return;
         songDuration = clip.length;
         UpdateHighlightVisual();   // recoloca la banda visual en el slider
     }
 
-    private void OnDestroy() {
-        if (songLoader != null) {
+    private void OnDestroy()
+    {
+        if (songLoader != null)
+        {
             songLoader.OnMetadataLoaded -= HandleMetadataLoaded;
             songLoader.OnAudioPrepared -= HandleAudioPrepared;
         }
     }
 
-    private void ParseHighlightFromString(string highlight) {
-        if (string.IsNullOrEmpty(highlight) || !highlight.Contains("-")) {
+    private void ParseHighlightFromString(string highlight)
+    {
+        if (string.IsNullOrEmpty(highlight) || !highlight.Contains("-"))
+        {
             highlightStart = highlightEnd = 0f;
             return;
         }
