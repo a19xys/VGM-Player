@@ -40,6 +40,14 @@ public class SongPlaybackManager : MonoBehaviour
         UpdateHighlightVisual();
     }
 
+    void Update() {
+        // Hotkey: ir al highlight
+        if (!InputLock.IsLocked && !SlidingMenuController.AnyOpen && Input.GetKeyDown(KeyCode.H))
+        {
+            JumpToHighlight();
+        }
+    }
+
     public void LoadSong()
     {
         if (audioSource.clip == null)

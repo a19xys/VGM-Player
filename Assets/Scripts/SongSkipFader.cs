@@ -17,7 +17,6 @@ public class SongSkipFader : MonoBehaviour
 
     private float cachedPreFadeVolume = 1f;
     private int tweenId = -1;
-    private bool isFading = false;
 
     /// <summary>Inicia un fade a 0. Si no pasas duraci�n, usa FadeSeconds.</summary>
     public void BeginFadeOut(float seconds = -1f)
@@ -35,7 +34,6 @@ public class SongSkipFader : MonoBehaviour
 
         // Guardamos el volumen actual para restaurarlo despu�s.
         cachedPreFadeVolume = audioSource.volume;
-        isFading = true;
 
         float from = audioSource.volume;
         float to = 0f;
@@ -44,14 +42,9 @@ public class SongSkipFader : MonoBehaviour
             .setEase(LeanTweenType.easeInOutQuad)
             .setOnUpdate(v =>
             {
-                if (audioSource) audioSource.volume = v; // �No tocamos slider!
+                if (audioSource) audioSource.volume = v; // No tocamos slider
             })
-            .setOnComplete(() =>
-            {
-                tweenId = -1;
-                isFading = false;
-            })
-            .id;
+            .setOnComplete(() => { tweenId = -1; }).id;
     }
 
     /// <summary>
@@ -68,7 +61,6 @@ public class SongSkipFader : MonoBehaviour
         {
             LeanTween.cancel(tweenId);
             tweenId = -1;
-            isFading = false;
         }
 
         // 2) Si el volumen est� pr�cticamente en silencio, restauramos el volumen previo.
@@ -82,6 +74,5 @@ public class SongSkipFader : MonoBehaviour
     {
         if (tweenId != -1) LeanTween.cancel(tweenId);
         tweenId = -1;
-        isFading = false;
     }
 }

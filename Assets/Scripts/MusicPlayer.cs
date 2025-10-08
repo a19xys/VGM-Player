@@ -87,28 +87,38 @@ public class MusicPlayer : MonoBehaviour,
     }
 
     /* ============================= Update ============================= */
-
     void Update()
     {
         // Icono Play/Pause siempre actualizado
         RefreshPlayIcon();
 
-        // Actualizar barra y tiempos mientras suena y no se arrastra
-        if (!isDragging && audioSource != null && audioSource.isPlaying)
+        // ===================== TIEMPOS / PROGRESO =====================
+        // Solo actualizamos barra/tiempos si:
+        // - no estamos arrastrando
+        // - hay AudioSource reproduciendo
+        // - y hay clip asignado (EVITA el warning de Unity)
+        if (!isDragging && audioSource != null && audioSource.isPlaying && audioSource.clip != null) // ← MOD: añadido "audioSource.clip != null"
         {
             UpdateProgressBar();
 
             if (currentTimeText != null)
                 currentTimeText.text = FormatTime(audioSource.time);
 
-            if (showCountdown && durationText != null && audioSource.clip != null)
+            if (showCountdown && durationText != null) // clip != null garantizado en el if exterior
             {
                 float remainingTime = audioSource.clip.length - audioSource.time;
                 durationText.text = "-" + FormatTime(remainingTime);
             }
         }
+        // Si NO hay clip, forzamos estado neutro para evitar parpadeos y warnings
+        else if (audioSource == null || audioSource.clip == null) // ← MOD: rama neutra sin clip
+        {
+            if (currentTimeText) currentTimeText.text = "0:00";
+            if (durationText)
+                durationText.text = showCountdown ? "-0:00" : "0:00";
+        }
 
-        // Fin de pista: RepeatOne reinicia, si no, transición a siguiente
+        // ===================== FIN DE PISTA =====================
         if (audioSource != null && audioSource.clip != null &&
             !audioSource.isPlaying && audioSource.time >= audioSource.clip.length)
         {
@@ -125,6 +135,7 @@ public class MusicPlayer : MonoBehaviour,
             return;
         }
 
+        // ===================== HOTKEYS (bloqueadas si menú abierto) =====================
         // Bloquear hotkeys si el menú de canciones está abierto
         if (selectionMenu != null && selectionMenu.IsHidden) return;
 
@@ -182,8 +193,13 @@ public class MusicPlayer : MonoBehaviour,
 
         float newTime = Mathf.Clamp(audioSource.clip.length * dragNormalizedPosition, 0, audioSource.clip.length - 0.01f);
         audioSource.time = newTime;
+
         if (!audioSource.isPlaying) audioSource.Play();
         UpdateVinylSpin();
+
+        // Avisar al pulso
+        if (songLoader != null && songLoader.beatPulseUI != null)
+            songLoader.beatPulseUI.RealignToSongTime();
     }
 
     public void OnPointerDown(PointerEventData eventData)
@@ -199,8 +215,13 @@ public class MusicPlayer : MonoBehaviour,
 
             float newTime = Mathf.Clamp(audioSource.clip.length * normalizedPosition, 0, audioSource.clip.length - 0.01f);
             audioSource.time = newTime;
+
             if (!audioSource.isPlaying) audioSource.Play();
             UpdateVinylSpin();
+
+            // Avisar al pulso
+            if (songLoader != null && songLoader.beatPulseUI != null)
+                songLoader.beatPulseUI.RealignToSongTime();
         }
     }
 
@@ -320,9 +341,12 @@ public class MusicPlayer : MonoBehaviour,
             durationText.text = "-" + FormatTime(remainingTime);
         }
 
-        // Si estaba en pausa y haces seek manual no forzamos play;
-        // si está sonando, asegura vinilo coherente cuando no hay vídeo.
+        // Asegura vinilo coherente
         UpdateVinylSpin();
+
+        // Avisar al pulso para realinear con el tiempo actual
+        if (songLoader != null && songLoader.beatPulseUI != null)
+            songLoader.beatPulseUI.RealignToSongTime();
     }
 
     private string FormatTime(float time)

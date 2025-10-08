@@ -43,6 +43,12 @@ public class SongLoader : MonoBehaviour
     public List<Image> color2Images;
     public Transform contentParent; // elementos de lista coloreables (si procede)
 
+    [Header("Logo fitting")]
+    [Tooltip("Ancho máximo base del área de logo (en píxeles UI).")]
+    public float logoMaxWidth = 560f;
+    [Tooltip("Altura máxima permitida (logos muy altos se capan aquí).")]
+    public float logoMaxHeight = 350f;
+
     [Header("Remix panel")]
     public GameObject remixObject;
 
@@ -59,10 +65,12 @@ public class SongLoader : MonoBehaviour
     [Header("Vinilo")]
     public VinylDiscController vinyl;  // raíz del vinilo (RawImage circular que rota)
 
+    [Header("Beat Pulse")]
+    public BeatPulseUI beatPulseUI; // Componente BeatPulseUI que pulsa UI
+
     public event System.Action<Color, Color> OnThemeChanged;
     public event System.Action<SongMetadata> OnMetadataLoaded;
     public event System.Action<AudioClip> OnAudioPrepared;
-    public event System.Action OnVideoReallyReady;
 
     [HideInInspector] public SongMetadata metadata;
 
@@ -71,7 +79,6 @@ public class SongLoader : MonoBehaviour
     private readonly List<string> videoPaths = new List<string>();
     private int currentVideoIndex = -1;
     private System.Random _rng = new System.Random();
-    private bool videoFirstFrameReady;
 
     private Texture2D currentLogoTex;  // por si lo muestras en UI
     private Texture2D currentDiscTex;  // disc{id}.png
@@ -203,11 +210,10 @@ public class SongLoader : MonoBehaviour
         if (remixObject && remixObject.activeInHierarchy)
         {
             var sp = remixObject.GetComponent<SlidingPanelController>();
-            // Forzar que el layout se estabilice y que el panel use el tamaño correcto
             if (sp != null) { sp.OnExternalContentPossiblyChangedAndBecameActive(); }
         }
 
-        // Logo opcional de UI
+        // Logo opcional
         string logoPath = Path.Combine(basePath, $"logo{id}.png");
         currentLogoTex = null;
         if (File.Exists(logoPath))
@@ -226,7 +232,7 @@ public class SongLoader : MonoBehaviour
             if (gameLogo) gameLogo.texture = null;
         }
 
-        // Arte del vinilo: disc{id}.png
+        // Arte del vinilo
         string discPath = Path.Combine(basePath, $"disc{id}.png");
         currentDiscTex = null;
         if (File.Exists(discPath))
@@ -237,7 +243,6 @@ public class SongLoader : MonoBehaviour
         }
         else
         {
-            // Fallback suave: si no hay 'disc', probar 'cover' y si no, usar logo.
             string coverPath = Path.Combine(basePath, $"cover{id}.png");
             if (File.Exists(coverPath))
             {
@@ -251,19 +256,24 @@ public class SongLoader : MonoBehaviour
             }
         }
 
-        // SongLoader.cs, dentro de LoadSongMetadataInstant(string id) al final del bloque donde ya tienes los colores aplicados
+        // Colores inmediatos
         AssignColorsInstant(metadata.Color1, metadata.Color2);
 
-        // Notificar a la UI (Color1/Color2 actualizados)
+        // Notificar tema/metadatos
         OnThemeChanged?.Invoke(metadata.Color1, metadata.Color2);
-
         OnMetadataLoaded?.Invoke(metadata);
 
-        // Color de fondo del área de vídeo por robustez (también lo haremos en Apply*Mode)
+        // Fondo de vídeo con Color2
         if (gm_background != null)
         {
             var c = gm_background.color;
             gm_background.color = new Color(metadata.Color2.r, metadata.Color2.g, metadata.Color2.b, c.a);
+        }
+
+        // Configurar el pulso con el mapa Beat de esta canción (SIN offset)
+        if (beatPulseUI != null)
+        {
+            beatPulseUI.ConfigureFromMetadata(audioSource, metadata?.Beat, gameLogo ? gameLogo.rectTransform : null);
         }
     }
 
@@ -291,11 +301,28 @@ public class SongLoader : MonoBehaviour
 
     private void AdjustRawImageProportions(RawImage rawImage, Texture2D texture)
     {
-        // Sólo para ajustar el LOGO en UI (no tocar el vinilo aquí)
+        if (rawImage == null) return;
         RectTransform rt = rawImage.rectTransform;
-        float aspect = (texture != null && texture.height != 0) ? (float)texture.width / texture.height : 1f;
-        float w = rt.sizeDelta.x;
-        float h = (aspect != 0f) ? w / aspect : rt.sizeDelta.y;
+
+        if (texture == null || texture.height == 0)
+            return;
+
+        float texW = texture.width;
+        float texH = texture.height;
+        float aspect = texW / texH;
+
+        float maxW = Mathf.Max(1f, logoMaxWidth);
+        float maxH = Mathf.Max(1f, logoMaxHeight);
+
+        // Fit “contain” en el rectángulo (maxW x maxH) preservando aspecto
+        float w = maxW;
+        float h = w / aspect;
+        if (h > maxH)
+        {
+            h = maxH;
+            w = h * aspect;
+        }
+
         rt.sizeDelta = new Vector2(w, h);
     }
 
@@ -413,62 +440,11 @@ public class SongLoader : MonoBehaviour
         else videoPlayer.Pause(); // preparado, listo para StartPlayback()
     }
 
-    private void OnVideoFrameReady(VideoPlayer source, long frameIdx)
-    {
-        // En cuanto recibamos al menos un frame válido, marcamos listo.
-        // Nota: muchos vídeos empiezan en frame 0; otros reportan 1. Nos da igual, con >=0 vale.
-        if (frameIdx >= 0) videoFirstFrameReady = true;
-    }
-
-    private IEnumerator PrimeFirstFrame(bool autoPlay)
-    {
-        // Arrancamos para forzar la decodificación del primer frame.
-        // Si autoPlay=false, luego pausaremos en 0 para el arranque sincronizado con audio.
-        videoPlayer.Play();
-
-        const float hardTimeout = 3.0f; // seguridad contra drivers raros
-        float t0 = Time.realtimeSinceStartup;
-
-        // Espera preferente por evento frameReady
-        while (!videoFirstFrameReady && (Time.realtimeSinceStartup - t0) < hardTimeout)
-            yield return null;
-
-        if (!videoFirstFrameReady)
-        {
-            // Respaldo por polling: algunos dispositivos no emiten frameReady de forma fiable.
-            // Considera "listo" cuando tengamos frame > 0 o time > 0 con texture válida durante un par de frames.
-            int consecutive = 0;
-            while ((Time.realtimeSinceStartup - t0) < hardTimeout && consecutive < 2)
-            {
-                bool ok = (videoPlayer.texture != null) &&
-                          (videoPlayer.frame > 0 || videoPlayer.time > 0.01f);
-                consecutive = ok ? (consecutive + 1) : 0;
-                yield return null;
-            }
-            videoFirstFrameReady = (consecutive >= 2);
-        }
-
-        // Si no queremos autoPlay todavía, “armamos” para sync:
-        // — Pausamos, reseteamos a 0 para que StartPlayback arranque todo en el mismo frame.
-        if (!autoPlay)
-        {
-            videoPlayer.Pause();
-            // Algunos backends necesitan fijar ambos:
-            videoPlayer.time = 0.0;
-            videoPlayer.frame = 0;
-            // Forzamos un pequeño “poke” de canvas/material para evitar negros en el frame 0.
-            Canvas.ForceUpdateCanvases();
-            yield return null; // un frame para estabilizar
-        }
-        // Si autoPlay=true, lo dejamos corriendo y devolvemos control.
-    }
-
     private void OnDestroy()
     {
         if (videoPlayer != null)
         {
             videoPlayer.loopPointReached -= OnVideoEnded;
-            videoPlayer.frameReady -= OnVideoFrameReady;
         }
     }
 
@@ -540,6 +516,12 @@ public class SongLoader : MonoBehaviour
                 vinyl.SetSpinDesired(playing);
             }
         }
+
+        // Realinear el pulso justo al arrancar (evita “arranque tarde” del primer beat)
+        if (beatPulseUI != null)
+        {
+            beatPulseUI.RealignToSongTime();
+        }
     }
 
     /* =========================================================
@@ -580,6 +562,11 @@ public class SongLoader : MonoBehaviour
         public Color Color1;
         public Color Color2;
         public string Lyrics;
+
+        // NEW: mapa de tempo por canción
+        [Serializable]
+        public class BeatItem { public float time; public float bpm; }
+        public List<BeatItem> Beat;
     }
 
     /* =========================================================
