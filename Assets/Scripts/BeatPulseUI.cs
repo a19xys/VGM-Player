@@ -261,30 +261,32 @@ public class BeatPulseUI : MonoBehaviour
     /// </summary>
     public void ConfigureFromMetadata(AudioSource musicSource, List<SongLoader.SongMetadata.BeatItem> beats, RectTransform targetOverride = null)
     {
-        // Referencias
         music = musicSource;
         if (targetOverride != null) target = targetOverride;
 
-        // Estado visual/base
+        // Arranca SIEMPRE en (1,1,1) para no heredar escalas de pulsos anteriores
+        ResetScaleToOne();
+
         if (target == null) target = GetComponent<RectTransform>();
         if (target != null)
         {
             _baseScale = target.localScale;
-            _baseAnchored = target.anchoredPosition; // ⬅️ IMPORTANTE: la anclada puede cambiar con cada logo
+            _baseAnchored = target.anchoredPosition; // IMPORTANTE: la anclada puede cambiar con cada logo
         }
 
-        // Limpia estado anterior
+        // Limpia estado previo
         CancelPulseTweens();
         segments.Clear();
         _segIndex = 0;
         _nextBeatTime = 0f;
         _lastSongTimeChecked = -1f;
 
-        // Datos nuevos
+        // Carga beats
         if (beats != null && beats.Count > 0)
         {
             foreach (var b in beats)
                 segments.Add(new TempoSegment { time = Mathf.Max(0f, b.time), bpm = Mathf.Max(1f, b.bpm) });
+
             segments.Sort((a, b) => a.time.CompareTo(b.time));
             SnapToNextBeatFromTime(GetSongTime());
             _initialized = true;
@@ -292,10 +294,10 @@ public class BeatPulseUI : MonoBehaviour
         }
         else
         {
-            // Sin datos de beat → deshabilita y restituye escala
+            // Sin beats: desactiva y mantén escala normalizada
             _initialized = false;
             enabled = false;
-            if (target != null) target.localScale = _baseScale;
+            // (ResetScaleToOne ya dejó la escala en 1,1,1)
         }
     }
 
@@ -310,7 +312,7 @@ public class BeatPulseUI : MonoBehaviour
         float t = GetSongTime();
         SnapToNextBeatFromTime(t);
 
-        // “Gracia” perceptiva cerca del beat
+        // Gracia perceptiva cerca del beat
         if (!_isPulsing && Mathf.Abs(_nextBeatTime - t) <= 0.06f)
         {
             TriggerPulse();
@@ -324,13 +326,52 @@ public class BeatPulseUI : MonoBehaviour
 
     private void CancelPulseTweens()
     {
-        if (target != null)
-            LeanTween.cancel(target.gameObject);
+        if (target != null) LeanTween.cancel(target.gameObject);
+        _isPulsing = false;
+        // Asegura estado consistente de escala y posición base
+        ResetScaleToOne();
+    }
+
+    private void ResetScaleToOne()
+    {
+        if (target == null) return;
+
+        // Corta cualquier tween en vuelo
+        LeanTween.cancel(target.gameObject);
+
+        // Si estábamos compensando el pivot, elimina el offset actual ANTES de normalizar
+        if (pulseAroundVisualCenter)
+        {
+            Vector2 size = target.rect.size;
+            Vector2 pivot = target.pivot;
+
+            // Factor de escala actual relativo a la base
+            float baseX = (_baseScale.x == 0f) ? 1f : _baseScale.x;
+            float s = target.localScale.x / baseX; // usamos X pues escalas son uniformes
+
+            // offset aplicado en ApplyScaleWithCompensation(s)
+            Vector2 appliedOffset = (pivot - kCenterPivot) * size * (s - 1f);
+
+            // Revertirlo
+            target.anchoredPosition -= appliedOffset;
+        }
+
+        // Normaliza escala y fija nuevas bases coherentes
+        target.localScale = Vector3.one;
+        _baseScale = Vector3.one;
+        _baseAnchored = target.anchoredPosition;
+
         _isPulsing = false;
     }
 
     void OnDisable()
     {
-        CancelPulseTweens();
+        ResetScaleToOne();
     }
+
+    void OnEnable()
+    {
+        ResetScaleToOne();
+    }
+
 }

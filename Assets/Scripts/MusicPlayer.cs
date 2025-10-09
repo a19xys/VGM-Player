@@ -6,9 +6,8 @@ using UnityEngine.UI;
 /// <summary>
 /// Reproductor: gestiona Play/Pause, barra, tiempos, modos y navegación.
 /// </summary>
-public class MusicPlayer : MonoBehaviour,
-    IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerDownHandler
-{
+public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHandler, IPointerDownHandler {
+    
     [Header("Refs")]
     public SongLoader songLoader;
     public TrackQueueManager queueManager;
@@ -87,29 +86,26 @@ public class MusicPlayer : MonoBehaviour,
     }
 
     /* ============================= Update ============================= */
+    
     void Update()
     {
         // Icono Play/Pause siempre actualizado
         RefreshPlayIcon();
 
-        // ===================== TIEMPOS / PROGRESO =====================
-        // Solo actualizamos barra/tiempos si:
-        // - no estamos arrastrando
-        // - hay AudioSource reproduciendo
-        // - y hay clip asignado (EVITA el warning de Unity)
-        if (!isDragging && audioSource != null && audioSource.isPlaying && audioSource.clip != null) // ← MOD: añadido "audioSource.clip != null"
+        // Actualizar barra y tiempos mientras suena y no se arrastra
+        if (!isDragging && audioSource != null && audioSource.isPlaying)
         {
             UpdateProgressBar();
-
             if (currentTimeText != null)
                 currentTimeText.text = FormatTime(audioSource.time);
 
-            if (showCountdown && durationText != null) // clip != null garantizado en el if exterior
+            if (showCountdown && durationText != null && audioSource.clip != null)
             {
                 float remainingTime = audioSource.clip.length - audioSource.time;
                 durationText.text = "-" + FormatTime(remainingTime);
             }
         }
+
         // Si NO hay clip, forzamos estado neutro para evitar parpadeos y warnings
         else if (audioSource == null || audioSource.clip == null) // ← MOD: rama neutra sin clip
         {
@@ -118,7 +114,7 @@ public class MusicPlayer : MonoBehaviour,
                 durationText.text = showCountdown ? "-0:00" : "0:00";
         }
 
-        // ===================== FIN DE PISTA =====================
+        // Fin de pista: RepeatOne reinicia, si no, transición a siguiente
         if (audioSource != null && audioSource.clip != null &&
             !audioSource.isPlaying && audioSource.time >= audioSource.clip.length)
         {
@@ -135,14 +131,25 @@ public class MusicPlayer : MonoBehaviour,
             return;
         }
 
-        // ===================== HOTKEYS (bloqueadas si menú abierto) =====================
         // Bloquear hotkeys si el menú de canciones está abierto
         if (selectionMenu != null && selectionMenu.IsHidden) return;
 
         // Hotkeys básicas
         if (Input.GetKeyDown(KeyCode.Space)) { TogglePlayPause(); }
-        if (Input.GetKeyDown(KeyCode.LeftArrow)) { SkipTime(-skiplapse); }
-        if (Input.GetKeyDown(KeyCode.RightArrow)) { SkipTime(skiplapse); }
+
+        // ====== Saltos 5 / 10 / 30 según modificadores ======
+        bool ctrl = Input.GetKey(KeyCode.LeftControl);
+        bool altL = Input.GetKey(KeyCode.LeftAlt); // Alt Izq específicamente
+        float skipSeconds = 10f;                    // flechas solas
+        if (ctrl) skipSeconds = 30f;          // Ctrl + flechas
+        else if (altL) skipSeconds = 5f;           // Alt Izq + flechas
+
+        if (Input.GetKeyDown(KeyCode.LeftArrow)) { SkipTime(-skipSeconds); }
+        if (Input.GetKeyDown(KeyCode.RightArrow)) { SkipTime(skipSeconds); }
+        // ============================================================
+
+        // K -> pausa/reanuda audio + vídeo a la vez
+        if (Input.GetKeyDown(KeyCode.K)) { TogglePlayPauseAudioAndVideo(); }
 
         // Navegación de pistas vía transición
         if (Input.GetKeyDown(KeyCode.P)) { if (transition != null) transition.GoToPrevious(); }
@@ -162,13 +169,19 @@ public class MusicPlayer : MonoBehaviour,
 
     /* ============================= Drag / Seek ============================= */
 
-    public void OnBeginDrag(PointerEventData eventData)
-    {
+    public void OnBeginDrag(PointerEventData eventData) {
         if (InputLock.IsLocked || grip == null) return;
 
         RectTransform gripRect = grip.GetComponent<RectTransform>();
-        if (RectTransformUtility.RectangleContainsScreenPoint(gripRect, eventData.position, eventData.pressEventCamera))
+        if (RectTransformUtility.RectangleContainsScreenPoint(gripRect, eventData.position, eventData.pressEventCamera)) {
             isDragging = true;
+
+            // Previsualiza inmediatamente con la posición actual del slider
+            if (progressBar != null) {
+                dragNormalizedPosition = progressBar.value;
+                UpdateTimePreviewUI(dragNormalizedPosition);
+            }
+        }
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -181,6 +194,9 @@ public class MusicPlayer : MonoBehaviour,
             dragNormalizedPosition = Mathf.Clamp01((localPoint.x / progressBarRect.rect.width) + 0.5f);
             progressBar.value = dragNormalizedPosition;
             UpdateGripPosition(dragNormalizedPosition);
+
+            // Vista previa mientras se arrastra
+            UpdateTimePreviewUI(dragNormalizedPosition);
         }
     }
 
@@ -225,21 +241,104 @@ public class MusicPlayer : MonoBehaviour,
         }
     }
 
+    private void UpdateTimePreviewUI(float normalized)
+    {
+        if (audioSource == null || audioSource.clip == null) return;
+
+        float clipLen = audioSource.clip.length;
+        float previewSec = Mathf.Clamp01(normalized) * clipLen;
+
+        // Texto de tiempo actual (vista previa)
+        if (currentTimeText != null)
+            currentTimeText.text = FormatTime(previewSec);
+
+        // Si está activada la cuenta atrás, también previsualizamos el restante
+        if (durationText != null && showCountdown)
+        {
+            float remaining = Mathf.Max(0f, clipLen - previewSec);
+            durationText.text = "-" + FormatTime(remaining);
+        }
+        // Si NO hay cuenta atrás, se deja la duración total tal y como está,
+        // igual que hace Update() cuando no está en modo countdown.
+    }
+
     /* ============================= Controles ============================= */
 
     public void TogglePlayPause()
     {
         if (audioSource == null) return;
 
-        if (audioSource.isPlaying) audioSource.Pause();
+        bool videoActive = songLoader != null && songLoader.videoContainer != null && songLoader.videoContainer.activeSelf;
+        var vp = (songLoader != null) ? songLoader.videoPlayer : null;
+        bool videoReady = videoActive && vp != null && vp.isPrepared;
+        bool videoPlaying = videoReady && vp.isPlaying;
+
+        if (audioSource.isPlaying)
+        {
+            // Audio ON + vídeo ON -> Space pausa SOLO audio (vídeo sigue)
+            audioSource.Pause();
+        }
         else
         {
-            if (audioSource.clip != null && audioSource.time >= audioSource.clip.length)
-                audioSource.time = 0f;
-            audioSource.Play();
+            // Audio OFF
+            // Si audio y vídeo están ambos pausados -> arrancar ambos sincronizados
+            if (videoReady && !videoPlaying)
+            {
+                if (audioSource.clip != null && audioSource.time >= audioSource.clip.length - 0.0001f)
+                    audioSource.time = 0f;
+
+                // Reproduce audio + vídeo (o vinilo) en el MISMO frame
+                songLoader.StartPlayback();
+            }
+            else
+            {
+                // No hay vídeo, o el vídeo ya está ON -> arranca solo el audio
+                if (audioSource.clip != null && audioSource.time >= audioSource.clip.length - 0.0001f)
+                    audioSource.time = 0f;
+
+                audioSource.Play();
+            }
         }
+
         RefreshPlayIcon();
         lastPlaying = audioSource.isPlaying;
+        UpdateVinylSpin();
+    }
+
+    public void TogglePlayPauseAudioAndVideo()
+    {
+        if (audioSource == null) return;
+
+        bool videoActive = songLoader != null && songLoader.videoContainer != null && songLoader.videoContainer.activeSelf;
+        var vp = (songLoader != null) ? songLoader.videoPlayer : null;
+        bool videoPlaying = videoActive && vp != null && vp.isPrepared && vp.isPlaying;
+        bool audioPlaying = audioSource.isPlaying;
+
+        // Si cualquiera está reproduciendo -> pausar ambos
+        if (audioPlaying || videoPlaying)
+        {
+            audioSource.Pause();
+            if (videoActive && vp != null) vp.Pause();
+
+            lastPlaying = false;
+            RefreshPlayIcon();
+            UpdateVinylSpin();
+            return;
+        }
+
+        // Si ambos están en pausa -> reanudar sincronizados
+        if (songLoader != null)
+        {
+            // Reproduce audio y vídeo (o vinilo) en el MISMO frame.
+            songLoader.StartPlayback();
+        }
+        else
+        {
+            audioSource.Play();
+        }
+
+        lastPlaying = (audioSource != null && audioSource.isPlaying);
+        RefreshPlayIcon();
         UpdateVinylSpin();
     }
 
@@ -289,7 +388,7 @@ public class MusicPlayer : MonoBehaviour,
     }
 
     /* ============================= Helpers UI ============================= */
-
+    
     private void UpdateProgressBar()
     {
         if (progressBar == null || audioSource == null || audioSource.clip == null) return;
@@ -394,7 +493,7 @@ public class MusicPlayer : MonoBehaviour,
     }
 
     /* ====================== Botones UI (Next/Prev) ====================== */
-
+    
     public void OnClickNext()
     {
         if (InputLock.IsLocked) return;
@@ -446,7 +545,7 @@ public class MusicPlayer : MonoBehaviour,
     }
 
     /* ====================== Vinilo: sync con Play/Pause y vídeo ====================== */
-
+    
     private void UpdateVinylSpin()
     {
         if (songLoader == null || songLoader.vinyl == null) return;
@@ -457,4 +556,5 @@ public class MusicPlayer : MonoBehaviour,
         // Sólo gira si NO hay vídeo y el audio está reproduciendo
         songLoader.vinyl.SetSpinDesired(!videoActive && isPlaying);
     }
+
 }

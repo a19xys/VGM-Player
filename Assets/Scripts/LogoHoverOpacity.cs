@@ -5,13 +5,14 @@ using UnityEngine.EventSystems;
 public class LogoHoverOpacity : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
     [Header("Refs")]
-    public SongLoader songLoader;        // Asigna tu SongLoader
-    public Graphic target;               // Si lo dejas vacío, usa el Graphic del propio GO (RawImage)
+    public SongLoader songLoader;                 // Asigna tu SongLoader
+    public Graphic target;                        // Si lo dejas vacío, usa el Graphic del propio GO (RawImage)
+    public SlidingPanelController infoPanel;      // Asigna el panel de info si quieres forzar opaco cuando esté abierto
 
     [Header("Opacity")]
-    [Range(0f, 1f)] public float idleAlpha = 0.8f;   // 80% de transparencia cuando NO hay hover
-    [Range(0f, 1f)] public float hoverAlpha = 1f;    // Opaco al hacer hover
-    public float fadeSeconds = 0.2f;
+    [Range(0f, 1f)] public float idleAlpha = 0.75f;   // 75% de opacidad cuando NO hay hover
+    [Range(0f, 1f)] public float hoverAlpha = 1f;     // Opaco al hacer hover
+    public float fadeSeconds = 0.25f;
 
     private CanvasGroup cg;
     private int tweenId = -1;
@@ -24,25 +25,25 @@ public class LogoHoverOpacity : MonoBehaviour, IPointerEnterHandler, IPointerExi
         cg = GetComponent<CanvasGroup>();
         if (!cg) cg = gameObject.AddComponent<CanvasGroup>();
         cg.interactable = true;
-        cg.blocksRaycasts = true; // para que el RawImage reciba el hover
+        cg.blocksRaycasts = true; // para recibir hover
     }
 
     void Start()
     {
-        // Estado inicial según modo vídeo/vinilo
-        bool forceOpaque = IsVinylMode();
+        bool forceOpaque = ShouldForceOpaque();
         lastForceOpaque = forceOpaque;
         cg.alpha = forceOpaque ? 1f : (pointerOver ? hoverAlpha : idleAlpha);
     }
 
     void Update()
     {
-        // Si cambia el modo (vídeo <-> vinilo), actualiza alpha y cancela tweens.
-        bool forceOpaque = IsVinylMode();
+        bool forceOpaque = ShouldForceOpaque();
+
+        // Si cambia el estado de "forzar opaco", haz tween hacia el valor nuevo
         if (forceOpaque != lastForceOpaque)
         {
-            CancelTween();
-            cg.alpha = forceOpaque ? 1f : (pointerOver ? hoverAlpha : idleAlpha);
+            float targetAlpha = forceOpaque ? 1f : (pointerOver ? hoverAlpha : idleAlpha);
+            FadeTo(targetAlpha);
             lastForceOpaque = forceOpaque;
         }
     }
@@ -50,23 +51,28 @@ public class LogoHoverOpacity : MonoBehaviour, IPointerEnterHandler, IPointerExi
     public void OnPointerEnter(PointerEventData eventData)
     {
         pointerOver = true;
-        if (IsVinylMode()) return; // en vinilo, siempre opaco; sin animación de hover
+        if (ShouldForceOpaque()) return; // en vinilo o info abierta, siempre opaco
         FadeTo(hoverAlpha);
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
         pointerOver = false;
-        if (IsVinylMode()) return; // en vinilo, siempre opaco
+        if (ShouldForceOpaque()) return; // en vinilo o info abierta, siempre opaco
         FadeTo(idleAlpha);
     }
 
-    private bool IsVinylMode()
+    private bool ShouldForceOpaque()
     {
-        // En tu flujo, si no hay vídeo -> videoContainer está desactivado => modo vinilo
-        return songLoader != null &&
-               songLoader.videoContainer != null &&
-               !songLoader.videoContainer.activeSelf;
+        // 1) Modo vinilo (no hay vídeo activo)
+        bool vinylMode = songLoader != null &&
+                         songLoader.videoContainer != null &&
+                         !songLoader.videoContainer.activeSelf;
+
+        // 2) Panel de información abierto (IsHidden == false)
+        bool infoOpen = infoPanel != null && !infoPanel.IsHidden;
+
+        return vinylMode || infoOpen;
     }
 
     private void FadeTo(float a)

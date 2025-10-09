@@ -152,7 +152,7 @@ public class TrackQueueManager : MonoBehaviour
                 else
                 {
                     if (history.Count > 0) currentIndex = history.Pop();
-                    else currentIndex = Mathf.Max(0, currentIndex - 1);
+                    else currentIndex = Mathf.Max(0, currentIndex - 1); // sin wrap
                 }
                 break;
 
@@ -163,6 +163,19 @@ public class TrackQueueManager : MonoBehaviour
                 return;
 
             case PlayMode.RepeatAll:
+                if (currentIndex < 0)
+                {
+                    // Estado virtual: ir a la ÚLTIMA canción visible.
+                    currentIndex = Mathf.Max(0, list.Count - 1);
+                }
+                else
+                {
+                    // Envolver hacia atrás.
+                    int count = list.Count;
+                    currentIndex = (currentIndex - 1 + count) % count;
+                }
+                break;
+
             case PlayMode.Normal:
             default:
                 if (currentIndex < 0)
@@ -172,7 +185,7 @@ public class TrackQueueManager : MonoBehaviour
                 }
                 else
                 {
-                    currentIndex = Mathf.Max(0, currentIndex - 1);
+                    currentIndex = Mathf.Max(0, currentIndex - 1); // sin wrap
                 }
                 break;
         }
