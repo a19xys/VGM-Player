@@ -93,11 +93,10 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         RefreshPlayIcon();
 
         // Actualizar barra y tiempos mientras suena y no se arrastra
-        if (!isDragging && audioSource != null && audioSource.isPlaying)
-        {
+        if (!isDragging && audioSource != null && audioSource.clip != null && audioSource.isPlaying) {
             UpdateProgressBar();
             if (currentTimeText != null)
-                currentTimeText.text = FormatTime(audioSource.time);
+                currentTimeText.text = FormatTime(SafeAudioTime());
 
             if (showCountdown && durationText != null && audioSource.clip != null)
             {
@@ -106,30 +105,33 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             }
         }
 
-        // Si NO hay clip, forzamos estado neutro para evitar parpadeos y warnings
-        else if (audioSource == null || audioSource.clip == null) // ← MOD: rama neutra sin clip
-        {
-            if (currentTimeText) currentTimeText.text = "0:00";
-            if (durationText)
-                durationText.text = showCountdown ? "-0:00" : "0:00";
-        }
-
-        // Fin de pista: RepeatOne reinicia, si no, transición a siguiente
+        // Fin de pista
         if (audioSource != null && audioSource.clip != null &&
-            !audioSource.isPlaying && audioSource.time >= audioSource.clip.length)
+            !audioSource.isPlaying && audioSource.time >= audioSource.clip.length - 0.001f)
         {
-            if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne)
+            var mode = queueManager != null ? queueManager.playMode : PlayMode.Normal;
+
+            if (mode == PlayMode.RepeatOne)
             {
-                audioSource.time = 0f;
-                audioSource.Play();
+                // LOOP ONE: reanudar la misma sin transición (audio+vídeo sincronizados)
+                RestartCurrentNoTransition();
+            }
+            else if (mode == PlayMode.Normal && queueManager != null && queueManager.IsLastIndex())
+            {
+                // NORMAL + última: parar y volver a 0 sin transición
+                audioSource.Stop();
+                JumpTime(0f);
+                RefreshPlayIcon();
                 UpdateVinylSpin();
             }
             else if (transition != null)
             {
+                // Otros modos -> transición a la siguiente
                 transition.GoToNext();
             }
             return;
         }
+
 
         // Bloquear hotkeys si el menú de canciones está abierto
         if (selectionMenu != null && selectionMenu.IsHidden) return;
@@ -152,8 +154,8 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         if (Input.GetKeyDown(KeyCode.K)) { TogglePlayPauseAudioAndVideo(); }
 
         // Navegación de pistas vía transición
-        if (Input.GetKeyDown(KeyCode.P)) { if (transition != null) transition.GoToPrevious(); }
-        if (Input.GetKeyDown(KeyCode.N)) { if (transition != null) transition.GoToNext(); }
+        if (Input.GetKeyDown(KeyCode.P)) { OnClickPrevious(); }
+        if (Input.GetKeyDown(KeyCode.N)) { OnClickNext(); }
 
         // Modos
         if (Input.GetKeyDown(KeyCode.S)) { ToggleShuffle(); }
@@ -207,15 +209,9 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
         if (InputLock.IsLocked || audioSource == null || audioSource.clip == null) return;
 
-        float newTime = Mathf.Clamp(audioSource.clip.length * dragNormalizedPosition, 0, audioSource.clip.length - 0.01f);
-        audioSource.time = newTime;
-
-        if (!audioSource.isPlaying) audioSource.Play();
-        UpdateVinylSpin();
-
-        // Avisar al pulso
-        if (songLoader != null && songLoader.beatPulseUI != null)
-            songLoader.beatPulseUI.RealignToSongTime();
+        // Calcula el tiempo objetivo (permitimos llegar hasta len para detectar "fin")
+        float candidate = Mathf.Clamp(audioSource.clip.length * dragNormalizedPosition, 0f, audioSource.clip.length);
+        HandleSeekReleaseTo(candidate);
     }
 
     public void OnPointerDown(PointerEventData eventData)
@@ -229,15 +225,8 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             progressBar.value = normalizedPosition;
             UpdateGripPosition(normalizedPosition);
 
-            float newTime = Mathf.Clamp(audioSource.clip.length * normalizedPosition, 0, audioSource.clip.length - 0.01f);
-            audioSource.time = newTime;
-
-            if (!audioSource.isPlaying) audioSource.Play();
-            UpdateVinylSpin();
-
-            // Avisar al pulso
-            if (songLoader != null && songLoader.beatPulseUI != null)
-                songLoader.beatPulseUI.RealignToSongTime();
+            float candidate = Mathf.Clamp(audioSource.clip.length * normalizedPosition, 0f, audioSource.clip.length);
+            HandleSeekReleaseTo(candidate);
         }
     }
 
@@ -408,6 +397,13 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         grip.transform.localPosition = localPosition;
     }
 
+    // Tiempo seguro y más preciso al inicio
+    private float SafeAudioTime()
+    {
+        if (audioSource == null || audioSource.clip == null) return 0f;
+        return audioSource.timeSamples / (float)audioSource.clip.frequency;
+    }
+
     private void SkipTime(float seconds)
     {
         if (InputLock.IsLocked || audioSource == null || audioSource.clip == null) return;
@@ -492,22 +488,155 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         if (audioSource) audioSource.loop = isRepeatOne;
     }
 
+    private void RestartCurrentNoTransition()
+    {
+        if (audioSource == null) return;
+
+        // Reiniciar tiempo
+        audioSource.time = 0f;
+
+        // Arranque sincronizado (audio + vídeo o vinilo) en el MISMO frame
+        if (songLoader != null)
+        {
+            songLoader.StartPlayback();
+        }
+        else
+        {
+            audioSource.Play();
+            RefreshPlayIcon();
+            UpdateVinylSpin();
+        }
+
+        // Refrescar UI de tiempos/progreso
+        UpdateProgressBar();
+        if (currentTimeText != null) currentTimeText.text = "0:00";
+        if (durationText != null && audioSource.clip != null)
+        {
+            if (showCountdown)
+            {
+                float remaining = audioSource.clip.length - audioSource.time; // ~clip.length
+                durationText.text = "-" + FormatTime(remaining);
+            }
+            else
+            {
+                durationText.text = FormatTime(audioSource.clip.length);
+            }
+        }
+
+        // Realinear el pulso, si existe
+        if (songLoader != null && songLoader.beatPulseUI != null)
+            songLoader.beatPulseUI.RealignToSongTime();
+    }
+
+    private void HandleSeekReleaseTo(float newTime)
+    {
+        if (audioSource == null || audioSource.clip == null) return;
+
+        float len = audioSource.clip.length;
+        const float endEpsilon = 0.02f; // ~20 ms
+        var mode = (queueManager != null) ? queueManager.playMode : PlayMode.Normal;
+        bool atEnd = newTime >= len - endEpsilon;
+
+        if (atEnd)
+        {
+            // LOOP ONE: “ir a la siguiente” = reiniciar la MISMA sin transición
+            if (mode == PlayMode.RepeatOne)
+            {
+                RestartCurrentNoTransition();
+                return;
+            }
+
+            // NORMAL + última pista: parar y volver a 0 sin transición
+            if (mode == PlayMode.Normal && queueManager != null && queueManager.IsLastIndex())
+            {
+                audioSource.Stop();
+                JumpTime(0f); // también actualiza la UI
+                RefreshPlayIcon();
+                UpdateVinylSpin();
+                return;
+            }
+
+            // Otros modos: dejar justo antes del final para que gobierne la lógica normal
+            newTime = Mathf.Max(0f, len - 0.01f);
+        }
+
+        // Seek estándar
+        audioSource.time = newTime;
+        if (!audioSource.isPlaying) audioSource.Play();
+
+        // Refrescos UI
+        UpdateProgressBar();
+        if (currentTimeText != null) currentTimeText.text = FormatTime(audioSource.time);
+        if (showCountdown && durationText != null)
+        {
+            float remainingTime = len - audioSource.time;
+            durationText.text = "-" + FormatTime(remainingTime);
+        }
+
+        UpdateVinylSpin();
+
+        // Re-alinear el pulso si existe
+        if (songLoader != null && songLoader.beatPulseUI != null)
+            songLoader.beatPulseUI.RealignToSongTime();
+    }
+
     /* ====================== Botones UI (Next/Prev) ====================== */
-    
+
     public void OnClickNext()
     {
         if (InputLock.IsLocked) return;
+
+        // LOOP ONE: Next → reiniciar la MISMA pista SIN transición
+        if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne)
+        {
+            RestartCurrentNoTransition();
+            return;
+        }
+
+        // Caso especial que ya tenías para Normal+última lo mantienes aparte
+        if (queueManager != null && queueManager.playMode == PlayMode.Normal && queueManager.IsLastIndex())
+        {
+            // Reproduce la misma desde 0 sin transición (tu regla de "no hay siguiente")
+            RestartCurrentNoTransition();
+            return;
+        }
+
+        // Resto de modos → transición normal
         if (transition != null) transition.GoToNext();
-        else if (queueManager != null) queueManager.Next(); // Fallback
+        else if (queueManager != null) queueManager.Next();
     }
 
     public void OnClickPrevious()
     {
         if (InputLock.IsLocked) return;
 
-        if (audioSource != null && audioSource.time > 3f) { JumpTime(0f); }
-        else if (transition != null) transition.GoToPrevious();
-        else if (queueManager != null) queueManager.Previous(); // Fallback
+        // LOOP ONE: Previous → reiniciar la MISMA pista SIN transición
+        if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne)
+        {
+            RestartCurrentNoTransition();
+            return;
+        }
+
+        // NORMAL + PRIMERA CANCIÓN: siempre reiniciar sin transición (da igual el tiempo transcurrido)
+        if (queueManager != null &&
+            queueManager.playMode == PlayMode.Normal &&
+            queueManager.IsFirstIndex())
+        {
+            RestartCurrentNoTransition();
+            return;
+        }
+
+        // Resto de casos en Normal: si >3s, vuelve a 0 sin transición
+        if (audioSource != null && audioSource.time > 3f)
+        {
+            JumpTime(0f);
+            if (songLoader != null && audioSource.isPlaying) songLoader.StartPlayback();
+            return;
+        }
+
+        // Otros modos / situaciones: transición a la anterior
+        if (transition != null) transition.GoToPrevious();
+        else if (queueManager != null) queueManager.Previous();
     }
 
     /* ====================== Event Handlers ====================== */

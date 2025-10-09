@@ -28,11 +28,9 @@ public class TrackQueueManager : MonoBehaviour
 
     // Estado de shuffle
     private readonly System.Random rng = new System.Random();
-    private readonly Stack<int> history = new Stack<int>();  // para "Previous" en Shuffle
-    private List<int> shuffleOrder = new List<int>();
 
-    // Puntero dentro del shuffleOrder. -1 significa "antes del primer elemento" (virtual).
-    private int shufflePtr = 0;
+    // Shuffle aleatorio: índice reservado para sincronizar preview (entrada) y carga (salida)
+    private int? pendingShuffleIndex = null;
 
     /* ===================== API PÚBLICA (compatibilidad UI) ===================== */
 
@@ -41,14 +39,15 @@ public class TrackQueueManager : MonoBehaviour
     /// </summary>
     public void PlayFromFilteredIndex(int index)
     {
-        EnsureListReady();
         int count = menu != null ? menu.FilteredCount() : 0;
         if (count <= 0) return;
 
         currentIndex = Mathf.Clamp(index, 0, count - 1);
         currentFileNumber = menu.GetFiltered()[currentIndex].FileNumber;
 
-        RecenterShuffleOn(currentIndex);
+        // cualquier reserva de shuffle ya no aplica
+        pendingShuffleIndex = null;
+
         PlayCurrent();
     }
 
@@ -87,25 +86,12 @@ public class TrackQueueManager : MonoBehaviour
         switch (playMode)
         {
             case PlayMode.RepeatOne:
-                // Si estamos "fuera" (-1), no tiene sentido repetir. Ir a primera y reproducir.
                 if (currentIndex < 0) currentIndex = 0;
                 PlayCurrent();
                 return;
 
             case PlayMode.Shuffle:
-                if (currentIndex < 0)
-                {
-                    // Venimos de estado virtual (p.ej., filtrado ocultó la actual): empezar shuffle por el principio.
-                    history.Clear();
-                    shufflePtr = 0;
-                    currentIndex = shuffleOrder[shufflePtr];
-                }
-                else
-                {
-                    history.Push(currentIndex);
-                    shufflePtr = WrapShufflePtr(shufflePtr + 1, list.Count);
-                    currentIndex = shuffleOrder[shufflePtr];
-                }
+                currentIndex = rng.Next(list.Count);
                 break;
 
             case PlayMode.RepeatAll:
@@ -113,7 +99,6 @@ public class TrackQueueManager : MonoBehaviour
             default:
                 if (currentIndex < 0)
                 {
-                    // Estado virtual: el primer "Next" va a la PRIMERA canción visible.
                     currentIndex = 0;
                 }
                 else
@@ -122,7 +107,7 @@ public class TrackQueueManager : MonoBehaviour
                     if (currentIndex >= list.Count)
                     {
                         if (playMode == PlayMode.RepeatAll) currentIndex = 0;
-                        else { currentIndex = list.Count - 1; return; } // quedarse al final en Normal
+                        else { currentIndex = list.Count - 1; return; }
                     }
                 }
                 break;
@@ -142,22 +127,10 @@ public class TrackQueueManager : MonoBehaviour
         switch (playMode)
         {
             case PlayMode.Shuffle:
-                if (currentIndex < 0)
-                {
-                    // Estado virtual: el primer "Previous" va al ÚLTIMO del shuffle.
-                    history.Clear();
-                    shufflePtr = list.Count - 1;
-                    currentIndex = shuffleOrder[shufflePtr];
-                }
-                else
-                {
-                    if (history.Count > 0) currentIndex = history.Pop();
-                    else currentIndex = Mathf.Max(0, currentIndex - 1); // sin wrap
-                }
+                currentIndex = rng.Next(list.Count);
                 break;
 
             case PlayMode.RepeatOne:
-                // Si estamos "fuera" (-1), caer al final lógico.
                 if (currentIndex < 0) currentIndex = Mathf.Max(0, list.Count - 1);
                 PlayCurrent();
                 return;
@@ -165,14 +138,11 @@ public class TrackQueueManager : MonoBehaviour
             case PlayMode.RepeatAll:
                 if (currentIndex < 0)
                 {
-                    // Estado virtual: ir a la ÚLTIMA canción visible.
                     currentIndex = Mathf.Max(0, list.Count - 1);
                 }
                 else
                 {
-                    // Envolver hacia atrás.
-                    int count = list.Count;
-                    currentIndex = (currentIndex - 1 + count) % count;
+                    currentIndex = (currentIndex - 1 + list.Count) % list.Count;
                 }
                 break;
 
@@ -180,12 +150,11 @@ public class TrackQueueManager : MonoBehaviour
             default:
                 if (currentIndex < 0)
                 {
-                    // Estado virtual: el primer "Previous" va a la ÚLTIMA canción visible.
                     currentIndex = Mathf.Max(0, list.Count - 1);
                 }
                 else
                 {
-                    currentIndex = Mathf.Max(0, currentIndex - 1); // sin wrap
+                    currentIndex = Mathf.Max(0, currentIndex - 1);
                 }
                 break;
         }
@@ -201,15 +170,7 @@ public class TrackQueueManager : MonoBehaviour
         if (playMode == mode) return;
 
         playMode = mode;
-
-        if (playMode == PlayMode.Shuffle)
-        {
-            BuildShuffleOrder();
-
-            // Si estamos en estado virtual (-1), queremos que el primer Next vaya al primero del shuffle.
-            shufflePtr = (currentIndex < 0) ? -1 : IndexOfInShuffle(currentIndex);
-            history.Clear();
-        }
+        pendingShuffleIndex = null; // limpiar reserva pendiente al cambiar de modo
 
         if (enableQueueDebug) LogState($"SetMode -> {playMode}");
         OnPlayModeChanged?.Invoke(playMode);
@@ -227,30 +188,17 @@ public class TrackQueueManager : MonoBehaviour
         if (list != null && list.Count > 0 && !string.IsNullOrEmpty(currentFileNumber))
         {
             int idx = list.FindIndex(s => s.FileNumber == currentFileNumber);
-            if (idx >= 0)
-            {
-                // La misma canción sigue visible: mantener puntero.
-                currentIndex = idx;
-            }
-            else
-            {
-                // La actual ya no está visible tras el filtro: entrar en estado virtual.
-                currentIndex = -1;
-            }
+            currentIndex = (idx >= 0) ? idx : -1; // -1 si ya no está visible
         }
         else
         {
-            // Lista vacía → forzar 0 (sin usar estado virtual) por robustez.
-            currentIndex = 0;
+            currentIndex = 0; // robustez para lista vacía
         }
 
-        BuildShuffleOrder();
-
-        if (currentIndex >= 0) RecenterShuffleOn(currentIndex);
-        else shufflePtr = -1; // virtual: primer Next → primer elemento; Previous → último
+        // Cualquier reserva previa ya no es válida con lista nueva/orden nuevo
+        pendingShuffleIndex = null;
 
         if (enableQueueDebug) LogState("NotifyFilteredListChanged");
-        // No vaciamos history aquí: para Shuffle ya lo hacemos al entrar en modo, o cuando toque.
     }
 
     /// <summary>
@@ -268,7 +216,7 @@ public class TrackQueueManager : MonoBehaviour
         currentIndex = idx;
         currentFileNumber = idToken;
 
-        RecenterShuffleOn(currentIndex);
+        pendingShuffleIndex = null;
 
         if (enableQueueDebug) LogState("SyncWithSongId");
         PlayCurrent();
@@ -303,136 +251,74 @@ public class TrackQueueManager : MonoBehaviour
         if (absoluteIndex >= 0)
         {
             currentIndex = Mathf.Clamp(absoluteIndex, 0, list.Count - 1);
-            RecenterShuffleOn(currentIndex);
-            history.Clear(); // opcional: empezar historial desde este punto
+            pendingShuffleIndex = null; // limpiar cualquier reserva previa
         }
         else
         {
             switch (playMode)
             {
                 case PlayMode.RepeatOne:
-                    // Si venimos de estado virtual, caer a 0; si no, nos quedamos tal cual.
                     if (currentIndex < 0) currentIndex = 0;
                     break;
 
                 case PlayMode.Shuffle:
-                    if (advance >= 0)
-                    {
-                        if (currentIndex < 0)
-                        {
-                            history.Clear();
-                            shufflePtr = 0;
-                            currentIndex = shuffleOrder[shufflePtr];
-                        }
-                        else
-                        {
-                            history.Push(currentIndex);
-                            shufflePtr = WrapShufflePtr(shufflePtr + 1, list.Count);
-                            currentIndex = shuffleOrder[shufflePtr];
-                        }
-                    }
+                    // Usa la MISMA canción que el preview (si hay reserva). Si no, elige ahora.
+                    if (pendingShuffleIndex.HasValue)
+                        currentIndex = Mathf.Clamp(pendingShuffleIndex.Value, 0, list.Count - 1);
                     else
-                    {
-                        if (currentIndex < 0)
-                        {
-                            history.Clear();
-                            shufflePtr = list.Count - 1;
-                            currentIndex = shuffleOrder[shufflePtr];
-                        }
-                        else
-                        {
-                            if (history.Count > 0) currentIndex = history.Pop();
-                            else currentIndex = Mathf.Max(0, currentIndex - 1);
-                        }
-                    }
+                        currentIndex = rng.Next(list.Count);
+
+                    pendingShuffleIndex = null; // consumir la reserva
                     break;
 
                 case PlayMode.RepeatAll:
                 case PlayMode.Normal:
                 default:
                     int step = Mathf.Clamp(advance, -1, 1);
-
                     if (currentIndex < 0)
                     {
-                        // Estado virtual: avance+ → primera; avance- → última
                         currentIndex = (step >= 0) ? 0 : Mathf.Max(0, list.Count - 1);
                     }
                     else
                     {
                         int next = currentIndex + step;
-                        if (next >= list.Count) next = (playMode == PlayMode.RepeatAll) ? 0 : list.Count - 1;
-                        if (next < 0) next = 0;
+
+                        if (next >= list.Count)
+                            next = (playMode == PlayMode.RepeatAll) ? 0 : list.Count - 1;
+                        else if (next < 0)
+                            next = (playMode == PlayMode.RepeatAll) ? list.Count - 1 : 0;
+
                         currentIndex = next;
                     }
                     break;
             }
         }
 
-        currentFileNumber = list[currentIndex].FileNumber; // STRING exacto (sin padding)
+        currentFileNumber = list[currentIndex].FileNumber;
         if (enableQueueDebug) LogState("ResolveTarget");
         return currentFileNumber;
     }
 
+    // ===================== Accesores útiles ===================== //
+
+    public bool IsFirstIndex()
+    {
+        var list = menu != null ? menu.GetFiltered() : null;
+        if (list == null || list.Count == 0) return true;    // sin lista: tratar como primero
+        return currentIndex <= 0;
+    }
+
+    // Helper público para saber si estamos en el último elemento de la lista filtrada
+    public bool IsLastIndex()
+    {
+        var list = menu != null ? menu.GetFiltered() : null;
+        if (list == null || list.Count == 0) return true;  // tratar como "último" si no hay lista
+        if (currentIndex < 0) return false;                // estado virtual: no consideramos "último"
+        return currentIndex >= list.Count - 1;
+    }
+
     /* ===================== Internos ===================== */
 
-    private void EnsureListReady()
-    {
-        if (menu == null || menu.GetFiltered() == null) return;
-        if (shuffleOrder == null || shuffleOrder.Count != menu.FilteredCount())
-            BuildShuffleOrder();
-    }
-
-    private void BuildShuffleOrder()
-    {
-        int n = menu != null ? menu.FilteredCount() : 0;
-
-        shuffleOrder = new List<int>(n);
-        for (int i = 0; i < n; i++) shuffleOrder.Add(i);
-
-        // Fisher–Yates
-        for (int i = n - 1; i > 0; i--)
-        {
-            int j = rng.Next(i + 1);
-            (shuffleOrder[i], shuffleOrder[j]) = (shuffleOrder[j], shuffleOrder[i]);
-        }
-
-        // Reajustar shufflePtr:
-        //  - Si currentIndex >= 0 → centrar en esa posición
-        //  - Si currentIndex < 0 → estado virtual → shufflePtr = -1 (antes del primero)
-        shufflePtr = (currentIndex >= 0)
-            ? Mathf.Clamp(IndexOfInShuffle(currentIndex), 0, Mathf.Max(0, n - 1))
-            : -1;
-
-        if (enableQueueDebug)
-        {
-            var list = menu != null ? menu.GetFiltered() : null;
-            string order = "";
-            if (list != null)
-            {
-                for (int k = 0; k < shuffleOrder.Count; k++)
-                {
-                    int idx = shuffleOrder[k];
-                    if (idx >= 0 && idx < list.Count)
-                        order += list[idx].FileNumber + (k < shuffleOrder.Count - 1 ? " -> " : "");
-                }
-            }
-            Debug.Log($"[Queue] BuildShuffleOrder: {order} | ptr={shufflePtr} (curIdx={currentIndex})");
-            DebugNextUpPreview(10);
-        }
-    }
-
-    private void RecenterShuffleOn(int index)
-    {
-        if (shuffleOrder == null || shuffleOrder.Count == 0) BuildShuffleOrder();
-        if (index < 0) { shufflePtr = -1; return; }
-        int pos = shuffleOrder.IndexOf(index);
-        shufflePtr = (pos >= 0) ? pos : -1;
-    }
-
-    /// <summary>
-    /// Versión INOFENSIVA (sin efectos) para calcular a qué índice iríamos.
-    /// No modifica ni historial, ni punteros, ni currentIndex.
-    /// </summary>
     private int ComputeTargetIndex(int advance, int absoluteIndex)
     {
         var list = menu != null ? menu.GetFiltered() : null;
@@ -447,18 +333,10 @@ public class TrackQueueManager : MonoBehaviour
                 return (currentIndex < 0) ? 0 : currentIndex;
 
             case PlayMode.Shuffle:
-                if (advance >= 0)
-                {
-                    if (list.Count == 0) return (currentIndex < 0) ? 0 : currentIndex;
-                    int nextPtr = (shufflePtr < 0) ? 0 : (shufflePtr + 1) % list.Count;
-                    return shuffleOrder[nextPtr];
-                }
-                else
-                {
-                    if (shufflePtr < 0) return shuffleOrder[Mathf.Max(0, list.Count - 1)];
-                    if (history.Count > 0) return Mathf.Clamp(history.Peek(), 0, list.Count - 1);
-                    return Mathf.Max(0, currentIndex - 1);
-                }
+                // Reserva un índice aleatorio para esta transición (colores de entrada)
+                if (!pendingShuffleIndex.HasValue)
+                    pendingShuffleIndex = rng.Next(list.Count);
+                return Mathf.Clamp(pendingShuffleIndex.Value, 0, list.Count - 1);
 
             case PlayMode.RepeatAll:
             case PlayMode.Normal:
@@ -468,8 +346,12 @@ public class TrackQueueManager : MonoBehaviour
                     return (step >= 0) ? 0 : Mathf.Max(0, list.Count - 1);
 
                 int next = currentIndex + step;
-                if (next >= list.Count) next = (playMode == PlayMode.RepeatAll) ? 0 : list.Count - 1;
-                if (next < 0) next = 0;
+
+                if (next >= list.Count)
+                    next = (playMode == PlayMode.RepeatAll) ? 0 : list.Count - 1;
+                else if (next < 0)
+                    next = (playMode == PlayMode.RepeatAll) ? list.Count - 1 : 0;
+
                 return next;
         }
     }
@@ -484,21 +366,6 @@ public class TrackQueueManager : MonoBehaviour
 
         string json = File.ReadAllText(jsonPath);
         return JsonUtility.FromJson<SongLoader.SongMetadata>(json);
-    }
-
-    /* ===================== Utils ===================== */
-
-    private int WrapShufflePtr(int value, int count)
-    {
-        if (count <= 0) return -1;
-        if (value < 0) return count - 1;
-        if (value >= count) return 0;
-        return value;
-    }
-
-    private int IndexOfInShuffle(int indexInList)
-    {
-        return shuffleOrder != null ? shuffleOrder.IndexOf(indexInList) : -1;
     }
 
     /* ===================== Debug helpers ===================== */
@@ -520,38 +387,20 @@ public class TrackQueueManager : MonoBehaviour
             }
         }
 
-        string shuf = "";
-        if (list != null && shuffleOrder != null && shuffleOrder.Count == list.Count)
-        {
-            for (int k = 0; k < shuffleOrder.Count; k++)
-            {
-                int idx = shuffleOrder[k];
-                if (idx >= 0 && idx < list.Count)
-                    shuf += list[idx].FileNumber + (k < shuffleOrder.Count - 1 ? " -> " : "");
-            }
-        }
-
-        string hist = "";
-        if (history != null && history.Count > 0)
-        {
-            hist = string.Join(",", history.ToArray());
-        }
-
         Debug.Log(
             $"[Queue::{tag}] mode={playMode} | curIndex={currentIndex} | curId={currentFileNumber} " +
-            $"| list=({(list != null ? list.Count : 0)}) {seq} " +
-            $"| shufflePtr={shufflePtr} | shuffle=[{shuf}] | history=[{hist}]"
+            $"| list=({(list != null ? list.Count : 0)}) {seq}"
         );
 
-        DebugNextUpPreview(10);
+        // ⬇️ Nada de “próximas” en Shuffle (evita consumir RNG y predicciones falsas)
+        if (playMode != PlayMode.Shuffle)
+            DebugNextUpPreview(10);
+        else
+            Debug.Log("[Queue::NextUp] Shuffle: Orden aleatorio en tiempo real (sin lista predeterminada).");
     }
 
     /// <summary>
     /// Imprime por consola el orden de las próximas N canciones según el MODO actual.
-    /// - Shuffle: sigue shuffleOrder a partir de shufflePtr+1 (o 0 si ptr=-1), con wrap.
-    /// - RepeatOne: repite la actual N veces (si currentIndex<0, usa la primera).
-    /// - RepeatAll: lista lineal desde currentIndex+1 con wrap.
-    /// - Normal: lista lineal hasta el final (sin wrap).
     /// </summary>
     private void DebugNextUpPreview(int n)
     {
@@ -559,6 +408,13 @@ public class TrackQueueManager : MonoBehaviour
 
         var list = menu != null ? menu.GetFiltered() : null;
         if (list == null || list.Count == 0) { Debug.Log("[Queue::NextUp] (lista vacía)"); return; }
+
+        if (playMode == PlayMode.Shuffle)
+        {
+            // No consumir RNG ni inventar una secuencia
+            Debug.Log("[Queue::NextUp] (Shuffle) Próximas: aleatorias (no precomputadas).");
+            return;
+        }
 
         List<string> nextUp = GetNextUpSequence(n);
         Debug.Log($"[Queue::NextUp] Próximas {nextUp.Count} → {string.Join(" | ", nextUp)}");
@@ -575,51 +431,26 @@ public class TrackQueueManager : MonoBehaviour
 
         switch (playMode)
         {
-            case PlayMode.Shuffle:
-                {
-                    int ptr = (shufflePtr < 0) ? -1 : shufflePtr;
-                    for (int i = 0; i < n; i++)
-                    {
-                        ptr = WrapShufflePtr(ptr + 1, list.Count);
-                        int idx = shuffleOrder[ptr];
-                        result.Add(list[idx].FileNumber);
-                    }
-                    break;
-                }
-
             case PlayMode.RepeatOne:
                 {
                     int idx = (currentIndex < 0) ? 0 : currentIndex;
-                    for (int i = 0; i < n; i++)
-                        result.Add(list[idx].FileNumber);
+                    for (int i = 0; i < n; i++) result.Add(list[idx].FileNumber);
                     break;
                 }
-
             case PlayMode.RepeatAll:
                 {
                     int idx = (currentIndex < 0) ? -1 : currentIndex;
-                    for (int i = 0; i < n; i++)
-                    {
-                        idx = (idx + 1) % list.Count;
-                        result.Add(list[idx].FileNumber);
-                    }
+                    for (int i = 0; i < n; i++) { idx = (idx + 1) % list.Count; result.Add(list[idx].FileNumber); }
                     break;
                 }
-
             case PlayMode.Normal:
             default:
                 {
                     int idx = (currentIndex < 0) ? -1 : currentIndex;
-                    for (int i = 0; i < n; i++)
-                    {
-                        idx = idx + 1;
-                        if (idx >= list.Count) break; // en Normal no hay wrap
-                        result.Add(list[idx].FileNumber);
-                    }
+                    for (int i = 0; i < n; i++) { idx = idx + 1; if (idx >= list.Count) break; result.Add(list[idx].FileNumber); }
                     break;
                 }
         }
-
         return result;
     }
 
@@ -635,7 +466,8 @@ public class TrackQueueManager : MonoBehaviour
 
         currentIndex = idx;
         currentFileNumber = idToken;
-        RecenterShuffleOn(currentIndex);
+
+        pendingShuffleIndex = null;
 
         if (enableQueueDebug) LogState("SetCurrentNoPlayback");
         return true;
