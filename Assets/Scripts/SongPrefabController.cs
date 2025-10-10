@@ -16,17 +16,27 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
     private Color secondary; // Color2
     private Color primaryDarken;     // Color1 más oscuro
 
+    // Colores originales cacheados para restaurar
+    private Color originalTitleColor;
+    private Color originalGameColor;
+    private Color originalIdColor;
+
     public void Initialize(
-        SongData data,
-        System.Action<SongData> onClickCallback,
-        System.Action<SongData> onFavoriteCallback,
-        Color primaryColor,
-        Color secondaryColor)
+    SongData data,
+    System.Action<SongData> onClickCallback,
+    System.Action<SongData> onFavoriteCallback,
+    Color primaryColor,
+    Color secondaryColor)
     {
         songData = data;
         primary = primaryColor;
         secondary = secondaryColor;
         primaryDarken = Darken(primary, 0.25f);
+
+        // Guardar colores originales de texto (para restaurar cuando NO sea la pista activa)
+        if (titleText) originalTitleColor = titleText.color;
+        if (gameText) originalGameColor = gameText.color;
+        if (idText) originalIdColor = idText.color;
 
         titleText.text = songData.Title;
         gameText.text = songData.Game;
@@ -36,25 +46,34 @@ public class SongPrefabController : MonoBehaviour, IPointerEnterHandler, IPointe
         var bg = GetComponent<RawImage>();
         if (bg) bg.color = primary;
 
-        // Corazón = Color2 si favorito, Color1 si no
+        // Corazón = Color2 si favorito, Color1 oscuro si no
         if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primaryDarken;
 
-        // Componente botón del prefab
+        // Botón del prefab sin navegación por teclado
         var btn = GetComponent<Button>();
         if (btn != null)
         {
             var nav = btn.navigation;
-            nav.mode = Navigation.Mode.None; // Evita focus/navegación por teclado
+            nav.mode = Navigation.Mode.None;
             btn.navigation = nav;
         }
 
         // Eventos
         GetComponent<Button>().onClick.AddListener(() => onClickCallback?.Invoke(songData));
-        heartIcon.GetComponent<Button>().onClick.AddListener(() => {
+        heartIcon.GetComponent<Button>().onClick.AddListener(() =>
+        {
             songData.IsFavorite = !songData.IsFavorite;
             if (heartIcon) heartIcon.color = songData.IsFavorite ? secondary : primaryDarken;
             onFavoriteCallback?.Invoke(songData);
         });
+    }
+
+    // Activa/Desactiva estado "reproduciendo" tintando textos con Color2
+    public void SetPlayingState(bool isPlaying, Color secondaryColor)
+    {
+        if (titleText) titleText.color = isPlaying ? secondaryColor : originalTitleColor;
+        if (gameText) gameText.color = isPlaying ? secondaryColor : originalGameColor;
+        if (idText) idText.color = isPlaying ? secondaryColor : originalIdColor;
     }
 
     // Llamado cuando cambia el tema (Color1/Color2)

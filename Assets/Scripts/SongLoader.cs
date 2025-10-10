@@ -557,13 +557,23 @@ public class SongLoader : MonoBehaviour
         public string RemixComposer;
         public string RemixGame;
         public string RemixReleaseYear;
-        public string Highlight;
+
+        // Segmento favorito
+        [Serializable]
+        public class HighlightBlock { public string start; public string end; }
+        public HighlightBlock Highlight;
+
+        // Segmento de bucle
+        [Serializable]
+        public class LoopData { public string start; public string end; }
+        public LoopData Loop;
+
         public bool Favorite;
         public Color Color1;
         public Color Color2;
         public string Lyrics;
 
-        // NEW: mapa de tempo por canción
+        // Mapa de tempo
         [Serializable]
         public class BeatItem { public float time; public float bpm; }
         public List<BeatItem> Beat;

@@ -37,6 +37,7 @@ public class SongMenuManager : MonoBehaviour
     private List<SongData> filteredSongList = new List<SongData>();
     private string jsonDirectory;
     private string lastSortCriterion = "id"; // id | title | game
+    private string lastKnownPlayingFileNumber = null; // Fallback por si no hay queue o en rutas sin transición
     private bool isAscending = true;
     private bool showingFavorites = false;
 
@@ -50,13 +51,22 @@ public class SongMenuManager : MonoBehaviour
 
         // Repintar menú al cambiar de canción/tema
         if (songLoader != null)
+        {
             songLoader.OnThemeChanged += OnThemeChanged;
+            songLoader.OnMetadataLoaded += HandleMetadataLoaded_ForPlayingVisual;
+        }
+
+        // Primer refresco del “playing”
+        RefreshCurrentPlayingVisual();
     }
 
     private void OnDestroy()
     {
         if (songLoader != null)
+        {
             songLoader.OnThemeChanged -= OnThemeChanged;
+            songLoader.OnMetadataLoaded -= HandleMetadataLoaded_ForPlayingVisual;
+        }
     }
 
     /* ===================== Carga & filtro ===================== */
@@ -117,8 +127,9 @@ public class SongMenuManager : MonoBehaviour
     // Manejo de evento de tema
     private void OnThemeChanged(Color c1, Color c2)
     {
-        UpdateVisualFeedback();   // botones de orden/filtro y toggle favoritos (usa Color2)
+        UpdateVisualFeedback();   // botones de orden/filtro (usa Color2)
         RecolorListItems(c1, c2); // repintado de items y corazones
+        RefreshCurrentPlayingVisual(); // mantener la fila activa tintada tras el repaint
     }
 
     // Recolor de prefabs existentes
@@ -163,8 +174,11 @@ public class SongMenuManager : MonoBehaviour
         // Mantener coherencia con la cola (shuffle, punteros, etc.)
         if (queueManager != null) queueManager.NotifyFilteredListChanged();
 
-        // Refrescar indicadores de modo (colores de botones) porque cambia Color2 activo
+        // Refrescar indicadores de modo (colores de botones)
         if (musicPlayer != null) musicPlayer.RefreshModeIndicators();
+
+        // Reaplicar “playing” a la fila correspondiente
+        RefreshCurrentPlayingVisual();
     }
 
     private void ClearPrefabs()
@@ -269,6 +283,37 @@ public class SongMenuManager : MonoBehaviour
             showFavoritesImage.color = showingFavorites ? activeColor : defaultColor;
     }
 
+    private void RefreshCurrentPlayingVisual()
+    {
+        // 1) Resolver ID actual
+        string curId = null;
+        if (queueManager != null)
+            curId = queueManager.GetCurrentFileNumber();
+        if (string.IsNullOrEmpty(curId))
+            curId = lastKnownPlayingFileNumber;
+
+        // 2) Color secundario vigente (de la canción actual)
+        Color c2 = (songLoader != null && songLoader.metadata != null) ? songLoader.metadata.Color2 : Color.white;
+
+        // 3) Recorrer todos los ítems y activar sólo el que coincide
+        if (!contentParent) return;
+
+        foreach (Transform child in contentParent)
+        {
+            var ctrl = child.GetComponent<SongPrefabController>();
+            if (!ctrl || ctrl.songData == null) continue;
+
+            bool isCurrent = (!string.IsNullOrEmpty(curId) && ctrl.songData.FileNumber == curId);
+            ctrl.SetPlayingState(isCurrent, c2);
+        }
+    }
+
+    // Cuando el loader anuncia nuevos metadatos (cambio de canción), refrescamos el playing.
+    private void HandleMetadataLoaded_ForPlayingVisual(SongLoader.SongMetadata _)
+    {
+        RefreshCurrentPlayingVisual();
+    }
+
     /* ===================== Selección de canción ===================== */
 
     private void OnSongSelected(SongData songData)
@@ -279,12 +324,19 @@ public class SongMenuManager : MonoBehaviour
         int idx = filteredSongList.FindIndex(s => s.FileNumber == songData.FileNumber);
         if (idx < 0) return;
 
-        // Limpiamos la selección para que Space no reenvíe Submit al botón
+        // Evitar que Space reenvíe Submit al botón
         if (EventSystem.current != null)
             EventSystem.current.SetSelectedGameObject(null);
 
-        // NO cerramos el menú aquí: lo cerrará la transición cuando cubra la pantalla.
-        if (transition != null) { transition.PlayFromFilteredIndex(idx); }
+        // Guardar "lo que creemos que sonará" para pintar inmediatamente
+        lastKnownPlayingFileNumber = songData.FileNumber;
+        RefreshCurrentPlayingVisual();
+
+        // No cerramos el menú aquí: lo cierra la transición
+        if (transition != null)
+        {
+            transition.PlayFromFilteredIndex(idx);
+        }
         else
         {
             if (queueManager != null) queueManager.PlayFromFilteredIndex(idx);

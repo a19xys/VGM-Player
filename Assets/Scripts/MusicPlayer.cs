@@ -39,6 +39,7 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     private bool showCountdown = false;        // ¿Mostrar cuenta atrás en durationText?
     private readonly Color inactiveColor = new Color(171 / 255f, 171 / 255f, 171 / 255f);
     private bool lastPlaying;                  // Para sincronizar vinilo
+    private const float LoopEdgeEpsilon = 0.005f; // ~5 ms para disparar el salto con suavidad
 
     /* ============================= Ciclo de vida ============================= */
 
@@ -62,12 +63,11 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         RefreshModeIndicators();
         RefreshPlayIcon();
 
-        // Si arrancamos con clip ya cargado (firstSongId), mostrar su duración
+        // Si arrancamos con clip ya cargado (firstSongId), mostrar duración EFECTIVA
         if (audioSource != null && audioSource.clip != null && durationText != null)
         {
-            durationText.text = showCountdown
-                ? "-" + FormatTime(audioSource.clip.length)
-                : FormatTime(audioSource.clip.length);
+            float dur = EffectiveDurationSec();
+            durationText.text = showCountdown ? ("-" + FormatTime(dur)) : FormatTime(dur);
         }
 
         // Inicializar estado de vinilo
@@ -86,22 +86,38 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     }
 
     /* ============================= Update ============================= */
-    
+
     void Update()
     {
         // Icono Play/Pause siempre actualizado
         RefreshPlayIcon();
 
         // Actualizar barra y tiempos mientras suena y no se arrastra
-        if (!isDragging && audioSource != null && audioSource.clip != null && audioSource.isPlaying) {
+        if (!isDragging && audioSource != null && audioSource.clip != null && audioSource.isPlaying)
+        {
             UpdateProgressBar();
             if (currentTimeText != null)
                 currentTimeText.text = FormatTime(SafeAudioTime());
-
             if (showCountdown && durationText != null && audioSource.clip != null)
             {
-                float remainingTime = audioSource.clip.length - audioSource.time;
+                float dur = EffectiveDurationSec();
+                float remainingTime = Mathf.Max(0f, dur - audioSource.time);
                 durationText.text = "-" + FormatTime(remainingTime);
+            }
+        }
+
+        // ===== LoopOne con segmento Loop {start,end} desde metadatos =====
+        if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne &&
+            audioSource != null && audioSource.clip != null && audioSource.isPlaying)
+        {
+            if (TryGetLoopRangeSeconds(out float loopStart, out float loopEnd))
+            {
+                if (audioSource.time >= loopEnd - LoopEdgeEpsilon)
+                {
+                    // Salto suave al inicio del segmento (sin transición)
+                    JumpTime(loopStart);
+                    return;
+                }
             }
         }
 
@@ -110,7 +126,6 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             !audioSource.isPlaying && audioSource.time >= audioSource.clip.length - 0.001f)
         {
             var mode = queueManager != null ? queueManager.playMode : PlayMode.Normal;
-
             if (mode == PlayMode.RepeatOne)
             {
                 // LOOP ONE: reanudar la misma sin transición (audio+vídeo sincronizados)
@@ -132,7 +147,6 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             return;
         }
 
-
         // Bloquear hotkeys si el menú de canciones está abierto
         if (selectionMenu != null && selectionMenu.IsHidden) return;
 
@@ -145,7 +159,6 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         float skipSeconds = 10f;                    // flechas solas
         if (ctrl) skipSeconds = 30f;          // Ctrl + flechas
         else if (altL) skipSeconds = 5f;           // Alt Izq + flechas
-
         if (Input.GetKeyDown(KeyCode.LeftArrow)) { SkipTime(-skipSeconds); }
         if (Input.GetKeyDown(KeyCode.RightArrow)) { SkipTime(skipSeconds); }
         // ============================================================
@@ -206,11 +219,10 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (!isDragging) return;
         isDragging = false;
-
         if (InputLock.IsLocked || audioSource == null || audioSource.clip == null) return;
 
-        // Calcula el tiempo objetivo (permitimos llegar hasta len para detectar "fin")
-        float candidate = Mathf.Clamp(audioSource.clip.length * dragNormalizedPosition, 0f, audioSource.clip.length);
+        // Calcula el tiempo objetivo dentro de [0 .. duración efectiva]
+        float candidate = NormalizedToTime(dragNormalizedPosition);
         HandleSeekReleaseTo(candidate);
     }
 
@@ -225,7 +237,8 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             progressBar.value = normalizedPosition;
             UpdateGripPosition(normalizedPosition);
 
-            float candidate = Mathf.Clamp(audioSource.clip.length * normalizedPosition, 0f, audioSource.clip.length);
+            // Tiempo candidato dentro de [0 .. duración efectiva]
+            float candidate = NormalizedToTime(normalizedPosition);
             HandleSeekReleaseTo(candidate);
         }
     }
@@ -234,21 +247,17 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (audioSource == null || audioSource.clip == null) return;
 
-        float clipLen = audioSource.clip.length;
+        float clipLen = EffectiveDurationSec();
         float previewSec = Mathf.Clamp01(normalized) * clipLen;
 
-        // Texto de tiempo actual (vista previa)
         if (currentTimeText != null)
             currentTimeText.text = FormatTime(previewSec);
 
-        // Si está activada la cuenta atrás, también previsualizamos el restante
         if (durationText != null && showCountdown)
         {
             float remaining = Mathf.Max(0f, clipLen - previewSec);
             durationText.text = "-" + FormatTime(remaining);
         }
-        // Si NO hay cuenta atrás, se deja la duración total tal y como está,
-        // igual que hace Update() cuando no está en modo countdown.
     }
 
     /* ============================= Controles ============================= */
@@ -364,25 +373,27 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         if (InputLock.IsLocked || audioSource == null || audioSource.clip == null || durationText == null) return;
 
         showCountdown = !showCountdown;
+        float dur = EffectiveDurationSec();
 
         if (showCountdown)
         {
-            float remainingTime = audioSource.clip.length - audioSource.time;
+            float remainingTime = Mathf.Max(0f, dur - audioSource.time);
             durationText.text = "-" + FormatTime(remainingTime);
         }
         else
         {
-            durationText.text = FormatTime(audioSource.clip.length);
+            durationText.text = FormatTime(dur);
         }
     }
 
     /* ============================= Helpers UI ============================= */
-    
+
     private void UpdateProgressBar()
     {
         if (progressBar == null || audioSource == null || audioSource.clip == null) return;
-
-        progressBar.value = audioSource.time / audioSource.clip.length;
+        float dur = Mathf.Max(0.0001f, EffectiveDurationSec());
+        float norm = Mathf.Clamp01(audioSource.time / dur);
+        progressBar.value = norm;
         UpdateGripPosition(progressBar.value);
     }
 
@@ -425,14 +436,19 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (audioSource == null || audioSource.clip == null) return;
 
-        audioSource.time = newTime;
+        // Clampear a la duración efectiva (en LoopOne+Loop, el final es 'end')
+        float dur = EffectiveDurationSec();
+        float t = Mathf.Clamp(newTime, 0f, Mathf.Max(0f, dur));
+
+        audioSource.time = t;
+
         UpdateProgressBar();
 
         if (currentTimeText != null) currentTimeText.text = FormatTime(audioSource.time);
 
         if (showCountdown && durationText != null)
         {
-            float remainingTime = audioSource.clip.length - audioSource.time;
+            float remainingTime = Mathf.Max(0f, dur - audioSource.time);
             durationText.text = "-" + FormatTime(remainingTime);
         }
 
@@ -484,8 +500,12 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         if (ibS) ibS.originalColor = shuffleButton.color;
         if (ibR) ibR.originalColor = repeatButton.color;
 
-        // Loop real del AudioSource solo en RepeatOne
-        if (audioSource) audioSource.loop = isRepeatOne;
+        // Importante: desactivar SIEMPRE el loop nativo del AudioSource
+        // (gestionar el relanzamiento al final de pista en Update → "Fin de pista")
+        if (audioSource) audioSource.loop = false;
+
+        // Refrescar duración/barra en caso de que cambie el modo (LoopOne con Loop acorta ‘end’)
+        RefreshLoopAwareUI();
     }
 
     private void RestartCurrentNoTransition()
@@ -499,10 +519,16 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         if (songLoader != null)
         {
             songLoader.StartPlayback();
+
+            // 🔧 Asegurar estado visual coherente EN ESTE MISMO FRAME
+            lastPlaying = (audioSource != null && audioSource.isPlaying);
+            RefreshPlayIcon();
+            UpdateVinylSpin();
         }
         else
         {
             audioSource.Play();
+            lastPlaying = true;
             RefreshPlayIcon();
             UpdateVinylSpin();
         }
@@ -514,12 +540,13 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         {
             if (showCountdown)
             {
-                float remaining = audioSource.clip.length - audioSource.time; // ~clip.length
-                durationText.text = "-" + FormatTime(remaining);
+                float remaining = EffectiveDurationSec() - audioSource.time; // usa duración efectiva si la tienes
+                durationText.text = "-" + FormatTime(Mathf.Max(0f, remaining));
             }
             else
             {
-                durationText.text = FormatTime(audioSource.clip.length);
+                // Mostrar duración efectiva si procede (RepeatOne+Loop), si no, la real
+                durationText.text = FormatTime(EffectiveDurationSec());
             }
         }
 
@@ -535,18 +562,48 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         float len = audioSource.clip.length;
         const float endEpsilon = 0.02f; // ~20 ms
         var mode = (queueManager != null) ? queueManager.playMode : PlayMode.Normal;
+
+        // Estado previo a mover el tiempo
+        bool audioWasPlaying = audioSource.isPlaying;
+        bool videoActive = (songLoader != null && songLoader.videoContainer != null && songLoader.videoContainer.activeSelf);
+        var vp = (songLoader != null) ? songLoader.videoPlayer : null;
+        bool videoWasPlaying = videoActive && vp != null && vp.isPrepared && vp.isPlaying;
+        bool bothWereOff = (!audioWasPlaying && !videoWasPlaying);
+
         bool atEnd = newTime >= len - endEpsilon;
 
         if (atEnd)
         {
-            // LOOP ONE: “ir a la siguiente” = reiniciar la MISMA sin transición
+            // LOOP ONE: comportamiento dependiente del estado previo
             if (mode == PlayMode.RepeatOne)
             {
-                RestartCurrentNoTransition();
+                if (audioWasPlaying || bothWereOff)
+                {
+                    // Reanudar loop inmediato (como antes)
+                    RestartCurrentNoTransition();
+                }
+                else
+                {
+                    // Estaba en pausa (y no es el caso "ambos OFF"): ir a 0:00 y mantener pausa
+                    audioSource.time = 0f;
+                    UpdateProgressBar();
+                    if (currentTimeText != null) currentTimeText.text = FormatTime(audioSource.time);
+                    if (showCountdown && durationText != null)
+                    {
+                        float remainingTime = len - audioSource.time;
+                        durationText.text = "-" + FormatTime(remainingTime);
+                    }
+                    UpdateVinylSpin();
+                    if (songLoader != null && songLoader.beatPulseUI != null)
+                        songLoader.beatPulseUI.RealignToSongTime();
+                }
+                // icono/vinilo ya quedan coherentes por las llamadas anteriores
+                lastPlaying = audioSource.isPlaying;
+                RefreshPlayIcon();
                 return;
             }
 
-            // NORMAL + última pista: parar y volver a 0 sin transición
+            // NORMAL + última pista: como ya tenías
             if (mode == PlayMode.Normal && queueManager != null && queueManager.IsLastIndex())
             {
                 audioSource.Stop();
@@ -562,7 +619,24 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
         // Seek estándar
         audioSource.time = newTime;
-        if (!audioSource.isPlaying) audioSource.Play();
+
+        // Política de reproducción tras el seek:
+        if (audioWasPlaying)
+        {
+            // Si veníamos reproduciendo, seguir reproduciendo
+            if (!audioSource.isPlaying) audioSource.Play();
+        }
+        else if (bothWereOff)
+        {
+            // Caso especial: audio OFF + vídeo OFF → reanudar ambos sincronizados
+            if (songLoader != null) songLoader.StartPlayback();
+            else audioSource.Play();
+        }
+        else
+        {
+            // Mantener pausa si veníamos en pausa (vídeo puede seguir su estado actual)
+            if (audioSource.isPlaying) audioSource.Pause();
+        }
 
         // Refrescos UI
         UpdateProgressBar();
@@ -573,6 +647,9 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             durationText.text = "-" + FormatTime(remainingTime);
         }
 
+        // Estado visual coherente en este mismo frame
+        lastPlaying = audioSource.isPlaying;
+        RefreshPlayIcon();
         UpdateVinylSpin();
 
         // Re-alinear el pulso si existe
@@ -643,7 +720,28 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
     private void HandlePlayModeChanged(PlayMode _)
     {
+        // Refrescos visuales habituales
         RefreshModeIndicators();
+
+        // Solo nos interesa cuando pasamos a RepeatOne
+        if (queueManager == null || audioSource == null || audioSource.clip == null) return;
+        if (queueManager.playMode != PlayMode.RepeatOne) return;
+
+        // ¿Hay loop válido en la canción actual?
+        if (!TryGetValidLoop(out float loopStart, out float loopEnd)) return;
+
+        float t = audioSource.time;
+
+        // Si estamos fuera del segmento [start, end) al entrar en RepeatOne,
+        // reinicia desde el principio sin transición (no saltamos a 'start').
+        bool outside = (t < loopStart) || (t >= loopEnd);
+        if (outside)
+        {
+            RestartCurrentNoTransition(); // ya refresca icono/vinilo/tiempos en este frame
+            return;
+        }
+
+        // Si estábamos dentro del segmento, no tocamos el tiempo.
     }
 
     private void HandleThemeChanged(Color c1, Color c2)
@@ -664,17 +762,69 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         if (progressBar) { progressBar.value = 0f; UpdateGripPosition(0f); }
         if (currentTimeText) currentTimeText.text = "0:00";
 
-        // Fijar duración de la nueva pista (contando modo cuenta atrás)
+        // Duración mostrada según modo (LoopOne+Loop -> end)
         if (durationText)
         {
-            durationText.text = showCountdown
-                ? "-" + FormatTime(clip.length)
-                : FormatTime(clip.length);
+            float dur = EffectiveDurationSec();
+            durationText.text = showCountdown ? ("-" + FormatTime(dur)) : FormatTime(dur);
         }
     }
 
+    // Lee y valida el Loop del metadata actual. Devuelve segundos absolutos.
+    private bool TryGetValidLoop(out float startSec, out float endSec)
+    {
+        startSec = 0f; endSec = 0f;
+        if (songLoader == null || songLoader.metadata == null || songLoader.metadata.Loop == null) return false;
+        if (audioSource == null || audioSource.clip == null) return false;
+
+        string s = songLoader.metadata.Loop.start;
+        string e = songLoader.metadata.Loop.end;
+        if (string.IsNullOrWhiteSpace(s) || string.IsNullOrWhiteSpace(e)) return false;
+
+        if (!TryParseTimestamp(s, out startSec)) return false;
+        if (!TryParseTimestamp(e, out endSec)) return false;
+
+        // Validación básica contra el clip
+        float len = audioSource.clip.length;
+        if (startSec < 0f || endSec <= 0f) return false;
+        if (startSec >= endSec) return false;
+        if (startSec >= len) return false;
+        if (endSec > len + 0.0001f) endSec = len; // clamp suave por seguridad
+
+        return true;
+    }
+
+    // "MM:SS(.fff)" o "M:SS(.ff)" → segundos
+    private bool TryParseTimestamp(string txt, out float seconds)
+    {
+        seconds = 0f;
+        if (string.IsNullOrWhiteSpace(txt)) return false;
+        txt = txt.Trim().Replace(',', '.');
+
+        // Permite "SS(.fff)" sin minutos
+        int colon = txt.IndexOf(':');
+        if (colon < 0)
+        {
+            if (float.TryParse(txt, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sOnly))
+            {
+                seconds = Mathf.Max(0f, sOnly);
+                return true;
+            }
+            return false;
+        }
+
+        string mStr = txt.Substring(0, colon);
+        string sStr = txt.Substring(colon + 1);
+
+        if (!int.TryParse(mStr, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int m)) return false;
+        if (!float.TryParse(sStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float s)) return false;
+
+        seconds = Mathf.Max(0f, m * 60f + s);
+        return true;
+    }
+
     /* ====================== Vinilo: sync con Play/Pause y vídeo ====================== */
-    
+
     private void UpdateVinylSpin()
     {
         if (songLoader == null || songLoader.vinyl == null) return;
@@ -684,6 +834,107 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
         // Sólo gira si NO hay vídeo y el audio está reproduciendo
         songLoader.vinyl.SetSpinDesired(!videoActive && isPlaying);
+    }
+
+    /* ====================== Segmentos de bucle ====================== */
+
+    private bool HasValidCustomLoop()
+    {
+        return TryGetLoopRangeSeconds(out _, out _);
+    }
+
+    private bool TryGetLoopRangeSeconds(out float startSec, out float endSec)
+    {
+        startSec = 0f; endSec = 0f;
+        if (songLoader == null || songLoader.metadata == null || songLoader.metadata.Loop == null) return false;
+        var lp = songLoader.metadata.Loop;
+        if (string.IsNullOrWhiteSpace(lp.start) || string.IsNullOrWhiteSpace(lp.end)) return false;
+
+        if (!TryParseFlexibleTimestamp(lp.start, out startSec)) return false;
+        if (!TryParseFlexibleTimestamp(lp.end, out endSec)) return false;
+
+        // Normalizar contra la duración del clip si la tenemos
+        if (audioSource != null && audioSource.clip != null)
+        {
+            float len = audioSource.clip.length;
+            startSec = Mathf.Clamp(startSec, 0f, len);
+            endSec = Mathf.Clamp(endSec, 0f, len);
+        }
+
+        return (endSec - startSec) > 0.02f; // al menos 20 ms
+    }
+
+    private static bool TryParseFlexibleTimestamp(string s, out float secondsOut)
+    {
+        secondsOut = 0f;
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        s = s.Trim().Replace(',', '.');
+
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string[] parts = s.Split(':');
+
+        if (parts.Length == 3)
+        {
+            if (!int.TryParse(parts[0], out int hh)) return false;
+            if (!int.TryParse(parts[1], out int mm)) return false;
+            if (!float.TryParse(parts[2], System.Globalization.NumberStyles.Float, inv, out float ss)) return false;
+            secondsOut = hh * 3600f + mm * 60f + ss;
+            return true;
+        }
+        else if (parts.Length == 2)
+        {
+            if (!int.TryParse(parts[0], out int mm)) return false;
+            if (!float.TryParse(parts[1], System.Globalization.NumberStyles.Float, inv, out float ss)) return false;
+            secondsOut = mm * 60f + ss;
+            return true;
+        }
+        else if (parts.Length == 1)
+        {
+            if (!float.TryParse(parts[0], System.Globalization.NumberStyles.Float, inv, out float ss)) return false;
+            secondsOut = ss;
+            return true;
+        }
+        return false;
+    }
+
+    // --- Loop-aware duration helpers ---
+    private float EffectiveDurationSec()
+    {
+        if (queueManager != null && queueManager.playMode == PlayMode.RepeatOne &&
+            TryGetLoopRangeSeconds(out _, out float loopEnd) &&
+            audioSource != null && audioSource.clip != null)
+        {
+            // Duración efectiva = 0 .. loopEnd
+            return Mathf.Clamp(loopEnd, 0f, audioSource.clip.length);
+        }
+        // Sin LoopOne válido -> longitud real
+        return (audioSource != null && audioSource.clip != null) ? audioSource.clip.length : 0f;
+    }
+
+    private float NormalizedToTime(float normalized)
+    {
+        float dur = EffectiveDurationSec();
+        return Mathf.Clamp01(normalized) * dur;
+    }
+
+    /// <summary>Refresca duración mostrada (total/restante) y barra usando la duración efectiva.</summary>
+    private void RefreshLoopAwareUI()
+    {
+        if (audioSource == null || audioSource.clip == null) return;
+
+        // Actualizar barra
+        UpdateProgressBar();
+
+        // Actualizar textos
+        if (currentTimeText != null)
+            currentTimeText.text = FormatTime(SafeAudioTime());
+
+        if (durationText != null)
+        {
+            float dur = EffectiveDurationSec();
+            float remaining = Mathf.Max(0f, dur - audioSource.time);
+            durationText.text = showCountdown ? ("-" + FormatTime(remaining)) : FormatTime(dur);
+        }
     }
 
 }

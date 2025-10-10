@@ -317,6 +317,12 @@ public class TrackQueueManager : MonoBehaviour
         return currentIndex >= list.Count - 1;
     }
 
+    // Accesor mínimo para conocer el fileNumber actual desde UI
+    public string GetCurrentFileNumber()
+    {
+        return currentFileNumber;
+    }
+
     /* ===================== Internos ===================== */
 
     private int ComputeTargetIndex(int advance, int absoluteIndex)
