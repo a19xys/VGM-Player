@@ -2,11 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.Playables;
 using UnityEngine.UI;
 using UnityEngine.Video;
-using TMPro;
 
 public class SongLoader : MonoBehaviour
 {
@@ -71,6 +72,11 @@ public class SongLoader : MonoBehaviour
     public event System.Action<Color, Color> OnThemeChanged;
     public event System.Action<SongMetadata> OnMetadataLoaded;
     public event System.Action<AudioClip> OnAudioPrepared;
+
+    // === Tema global (para prefabs que no pueden referenciar SongLoader por Inspector) ===
+    public static event System.Action<Color, Color> OnGlobalThemeChanged; // (c1, c2)
+    public static Color LastColor1 { get; private set; }
+    public static Color LastColor2 { get; private set; }
 
     [HideInInspector] public SongMetadata metadata;
 
@@ -262,6 +268,8 @@ public class SongLoader : MonoBehaviour
         // Notificar tema/metadatos
         OnThemeChanged?.Invoke(metadata.Color1, metadata.Color2);
         OnMetadataLoaded?.Invoke(metadata);
+        // Notificación global para prefabs
+        RaiseGlobalThemeChanged(metadata.Color1, metadata.Color2);
 
         // Fondo de vídeo con Color2
         if (gm_background != null)
@@ -324,6 +332,13 @@ public class SongLoader : MonoBehaviour
         }
 
         rt.sizeDelta = new Vector2(w, h);
+    }
+
+    private void RaiseGlobalThemeChanged(Color c1, Color c2)
+    {
+        LastColor1 = c1;
+        LastColor2 = c2;
+        OnGlobalThemeChanged?.Invoke(c1, c2);
     }
 
     /* =========================================================

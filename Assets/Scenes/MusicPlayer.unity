@@ -154,8 +154,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 41.558, y: 61.314}
-  m_SizeDelta: {x: 18.846, y: 18.979}
+  m_AnchoredPosition: {x: 42.2, y: 61.314}
+  m_SizeDelta: {x: 19, y: 19}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &6971530
 MonoBehaviour:
@@ -170,14 +170,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.5254902, g: 0, b: 0, a: 1}
+  m_Color: {r: 0, g: 0, b: 0, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Texture: {fileID: 2800000, guid: 5c6916e6d17156042a066d1e11fecd27, type: 3}
+  m_Texture: {fileID: 2800000, guid: c011fd5e350c62341a75bc9deb7302f5, type: 3}
   m_UVRect:
     serializedVersion: 2
     x: 0
@@ -204,40 +204,43 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9082432befd91bc47bb4aa226cf9b1b6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  musicPlayer: {fileID: 442433451}
   gifImage: {fileID: 6971530}
   frames:
-  - {fileID: 2800000, guid: 5c6916e6d17156042a066d1e11fecd27, type: 3}
-  - {fileID: 2800000, guid: 9d88646cd02108441990bc71510b7181, type: 3}
-  - {fileID: 2800000, guid: 68f721a18be5a0e4bb56ea3d8164c273, type: 3}
-  - {fileID: 2800000, guid: bcf86fc861b95d343b728be2d9c6b143, type: 3}
-  - {fileID: 2800000, guid: cd59da33debe49946b0b2cd7c0dfc847, type: 3}
-  - {fileID: 2800000, guid: 5cdf9ebcbdec02748915a4649a1a3847, type: 3}
-  - {fileID: 2800000, guid: e8e8318e25ac264469c56dec3c4b2c59, type: 3}
-  - {fileID: 2800000, guid: e3315c8056417194ca310f5b48c1a211, type: 3}
-  - {fileID: 2800000, guid: 2d461c86209ef034aa5efdfad31117b5, type: 3}
-  - {fileID: 2800000, guid: 5253ab2dc5a2e88439ccec3433478b35, type: 3}
-  - {fileID: 2800000, guid: 8465b11ee5c67214687c790143ad649b, type: 3}
-  - {fileID: 2800000, guid: 7964ad80766f6d243aababd9e5070302, type: 3}
-  - {fileID: 2800000, guid: 3367dc0eedf834b41ac03a26f790f75e, type: 3}
-  - {fileID: 2800000, guid: 6af3d06adc34c484192feac7eac36607, type: 3}
-  - {fileID: 2800000, guid: 0365b1b3de336f740a6a59ccc339f690, type: 3}
-  - {fileID: 2800000, guid: d1225cb9ca5d2194c8212e53a578d33c, type: 3}
-  - {fileID: 2800000, guid: 6abe2c23b1c29e444a1e5549abcf35c5, type: 3}
-  - {fileID: 2800000, guid: 0e113acdcf4dad541bfc92c8183b5936, type: 3}
-  - {fileID: 2800000, guid: ced91d80436400f4daa1c5d932a66a37, type: 3}
-  - {fileID: 2800000, guid: 0839b5b30d126ce46899a391b52d2c29, type: 3}
-  - {fileID: 2800000, guid: d8bbc916aeb51344193f0bcef75ef6e8, type: 3}
-  - {fileID: 2800000, guid: ec802d79173930349ae5e51458e83aa5, type: 3}
-  - {fileID: 2800000, guid: 15011c5bf6ab8aa4bb822532f64692c9, type: 3}
-  - {fileID: 2800000, guid: effc33d57cc7b624f9415aae3ba391d0, type: 3}
-  - {fileID: 2800000, guid: c32b8675c85383248b4a399c999676c9, type: 3}
-  - {fileID: 2800000, guid: 82a56eea8ab3e87499908c6d5e980a42, type: 3}
-  - {fileID: 2800000, guid: ea77cc403b136c64fbc2a675f34ad8b2, type: 3}
-  - {fileID: 2800000, guid: 4053f03c4e807a548b2c0248320b1e53, type: 3}
-  - {fileID: 2800000, guid: fd94f826ded6bed49aa8fcfd8d04ec27, type: 3}
-  - {fileID: 2800000, guid: 643c2eb55970249478d5e043fe627540, type: 3}
+  - {fileID: 2800000, guid: c011fd5e350c62341a75bc9deb7302f5, type: 3}
+  - {fileID: 2800000, guid: d10d035d5e9deb644b8aef25aae7c83b, type: 3}
+  - {fileID: 2800000, guid: fc1c1f28ad31d9c4bacc27afd3a43ccc, type: 3}
+  - {fileID: 2800000, guid: 2ff546fb871a9d34db04a97ed0263cc9, type: 3}
+  - {fileID: 2800000, guid: acf64d44bcdf1d544a586f81c3fbaa19, type: 3}
+  - {fileID: 2800000, guid: dc1f654d376a9c34abfbd034e4523978, type: 3}
+  - {fileID: 2800000, guid: b68f24594fa04e74c9fe3abc5138fab6, type: 3}
+  - {fileID: 2800000, guid: 33e0de6eb43b98f4c90f3fd6e3fd5308, type: 3}
+  - {fileID: 2800000, guid: 4cbf0d55f75ecc64c97e83eaa3863999, type: 3}
+  - {fileID: 2800000, guid: 186f19f9747e98944abf651350e51622, type: 3}
+  - {fileID: 2800000, guid: 55d9b8d8af19ed84bbffb87918e86ab5, type: 3}
+  - {fileID: 2800000, guid: 9975b08c9a28643459b8c1c3a0c90c34, type: 3}
+  - {fileID: 2800000, guid: aa66f5910af490a4db7c6a3cff6980ce, type: 3}
+  - {fileID: 2800000, guid: 2b455468843025543ade71b591bb3328, type: 3}
+  - {fileID: 2800000, guid: 198800863e3c169439ffb1830316f6e6, type: 3}
+  - {fileID: 2800000, guid: cf30968a8a6fbac4c902863dd90118e0, type: 3}
+  - {fileID: 2800000, guid: cdf64ad09e1000946aa45ed77b25212b, type: 3}
+  - {fileID: 2800000, guid: 24f9cba88ef4ec5469a6bae7dc8cd11f, type: 3}
+  - {fileID: 2800000, guid: 78fa4c3a01ac36746a1b19c3a4b64760, type: 3}
+  - {fileID: 2800000, guid: 4fb970a8a63eac440b6580b997d4f0af, type: 3}
+  - {fileID: 2800000, guid: 722c9e3c53f6c3548980be24e0cd688a, type: 3}
+  - {fileID: 2800000, guid: 33c46a47d646120418c2eeb0ba3ae770, type: 3}
+  - {fileID: 2800000, guid: 783fa245978252c4fb972e90d5a2ed36, type: 3}
+  - {fileID: 2800000, guid: ca32baf0778f03e4cb04104e7eb2e6a7, type: 3}
+  - {fileID: 2800000, guid: 8f3f8506d741ee448b2cf2c4d0335bb2, type: 3}
+  - {fileID: 2800000, guid: dfda825270d8da245bca7768ab78f284, type: 3}
+  - {fileID: 2800000, guid: 8db4ca508871e994a915daa7d33bf902, type: 3}
+  - {fileID: 2800000, guid: ebcdc67e65a2c5248ace5b598959402d, type: 3}
+  - {fileID: 2800000, guid: 9dd7ce226e49f9a4d8752a0366430587, type: 3}
+  - {fileID: 2800000, guid: b5a1c64135b856846ae55451a1391e0f, type: 3}
   frameRate: 24
+  controlledExternally: 0
+  followMusicPlayer: 1
+  tintWithColor: 0
+  usePrimaryColor: 0
 --- !u!1 &12962269
 GameObject:
   m_ObjectHideFlags: 0
@@ -964,7 +967,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 856.6, y: -0.0024719238}
+  m_AnchoredPosition: {x: 856.7999, y: -0.0024719238}
   m_SizeDelta: {x: 2.52, y: 962.4}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &316021993
@@ -2911,7 +2914,6 @@ MonoBehaviour:
   - {fileID: 1338223775}
   - {fileID: 2080820255}
   - {fileID: 1177209534}
-  - {fileID: 6971530}
   color2Images:
   - {fileID: 2786862853559963820}
   - {fileID: 4259528620393975154}
