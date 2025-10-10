@@ -23,12 +23,22 @@ public class SlidingPanelController : MonoBehaviour
     public PanelEvent onPanelOpened;
     public PanelEvent onPanelClosed;
 
+    // --- Scale on open/close (optional) ---
+    [Header("Scale target (optional)")]
+    public Transform scaleTarget;
+    [Range(0.2f, 2f)] public float openScaleFactor = 0.81f;
+    [Range(0.2f, 2f)] public float closedScaleFactor = 1.00f;
+
     public bool IsHidden { get; private set; }
 
     private Vector2 initialPos;
     private Vector2 hiddenPos;
     private bool canToggle = true;
     private bool initialized;                 // para evitar doble init
+
+    private Vector3 _baseScale = Vector3.one;
+    private bool _baseScaleCaptured = false;
+    private int _scaleTweenId = -1;
 
     /* ================= Ciclo ================= */
     void Awake()
@@ -77,7 +87,7 @@ public class SlidingPanelController : MonoBehaviour
             TryTogglePanel();
     }
 
-    /* ================= API p�blica ================= */
+    /* ================= API pública ================= */
     public void OnExternalContentPossiblyChangedAndBecameActive()
     {
         // Llamar cuando activas el GO o cambias su contenido/tama�o (p.ej., al pasar de no-remix a remix).
@@ -98,26 +108,40 @@ public class SlidingPanelController : MonoBehaviour
     {
         if (!panel || !canToggle) return;
         canToggle = false;
-        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tama�o cambi�
+
+        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tamaño cambió
+
+        // Animación de apertura del panel
         LeanTween.move(panel, initialPos, animationDuration)
-                 .setEase(LeanTweenType.easeInOutQuart)
-                 .setOnComplete(() => canToggle = true);
+            .setEase(LeanTweenType.easeInOutQuart)
+            .setOnComplete(() => canToggle = true);
+
         IsHidden = false;
         UpdateRotation();
         onPanelOpened?.Invoke();
+
+        // Escalado sincronizado con la misma duración
+        StartScaleTweenFactor(openScaleFactor);
     }
 
     public void Close()
     {
         if (!panel || !canToggle) return;
         canToggle = false;
-        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tama�o cambi�
+
+        RecalculateGeometry(keepHiddenState: false, applySnap: false); // por si el tamaño cambió
+
+        // Animación de cierre del panel
         LeanTween.move(panel, hiddenPos, animationDuration)
-                 .setEase(LeanTweenType.easeInOutQuart)
-                 .setOnComplete(() => canToggle = true);
+            .setEase(LeanTweenType.easeInOutQuart)
+            .setOnComplete(() => canToggle = true);
+
         IsHidden = true;
         UpdateRotation();
         onPanelClosed?.Invoke();
+
+        // Escalado sincronizado con la misma duración
+        StartScaleTweenFactor(closedScaleFactor);
     }
 
     public void OpenInstant()
@@ -128,6 +152,9 @@ public class SlidingPanelController : MonoBehaviour
         IsHidden = false;
         UpdateRotation();
         onPanelOpened?.Invoke();
+
+        // Aplicar escala instantánea acorde a estado "abierto"
+        SetScaleInstantFactor(openScaleFactor);
     }
 
     public void CloseInstant()
@@ -138,6 +165,9 @@ public class SlidingPanelController : MonoBehaviour
         IsHidden = true;
         UpdateRotation();
         onPanelClosed?.Invoke();
+
+        // Aplicar escala instantánea acorde a estado "cerrado"
+        SetScaleInstantFactor(closedScaleFactor);
     }
 
     /* ================= Internos ================= */
@@ -193,4 +223,38 @@ public class SlidingPanelController : MonoBehaviour
         var p = panel.parent as RectTransform;
         if (p) LayoutRebuilder.ForceRebuildLayoutImmediate(p);
     }
+
+    private void EnsureBaseScaleCaptured()
+    {
+        if (_baseScaleCaptured || scaleTarget == null) return;
+        _baseScale = scaleTarget.localScale; // respeta la escala original del objeto
+        _baseScaleCaptured = true;
+    }
+
+    /* ================= Helpers logo ================= */
+
+    private void StartScaleTweenFactor(float factor)
+    {
+        if (scaleTarget == null) return;
+        EnsureBaseScaleCaptured();
+
+        if (_scaleTweenId != -1)
+        {
+            LeanTween.cancel(_scaleTweenId);
+            _scaleTweenId = -1;
+        }
+
+        Vector3 target = _baseScale * factor;
+        _scaleTweenId = LeanTween.scale(scaleTarget.gameObject, target, animationDuration)
+            .setEase(LeanTweenType.easeInOutQuart)
+            .id;
+    }
+
+    private void SetScaleInstantFactor(float factor)
+    {
+        if (scaleTarget == null) return;
+        EnsureBaseScaleCaptured();
+        scaleTarget.localScale = _baseScale * factor;
+    }
+
 }
