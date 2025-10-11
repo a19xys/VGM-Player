@@ -136,11 +136,8 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
             }
             else if (mode == PlayMode.Normal && queueManager != null && queueManager.IsLastIndex())
             {
-                // NORMAL + última: parar y volver a 0 sin transición
-                audioSource.Stop();
-                JumpTime(0f);
-                RefreshPlayIcon();
-                UpdateVinylSpin();
+                // NORMAL + última: PAUSAR y volver a 0 (no Stop) para permitir seeks correctos
+                PauseAndResetToStart();
             }
             else if (transition != null)
             {
@@ -277,27 +274,25 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
 
         if (audioSource.isPlaying)
         {
-            // Audio ON + vídeo ON -> Space pausa SOLO audio (vídeo sigue)
             audioSource.Pause();
+            pendingPausedTime = audioSource.time; // guarda el tiempo real al pausar
         }
         else
         {
-            // Audio OFF
-            // Si audio y vídeo están ambos pausados -> arrancar ambos sincronizados
+            // Aplica el tiempo pendiente antes de reproducir
+            if (pendingPausedTime >= 0f) audioSource.time = pendingPausedTime;
+
             if (videoReady && !videoPlaying)
             {
-                if (audioSource.clip != null && audioSource.time >= audioSource.clip.length - 0.0001f)
-                    audioSource.time = 0f;
-                // Reproduce audio + vídeo (o vinilo) en el MISMO frame
-                songLoader.StartPlayback();
+                songLoader.StartPlayback(); // reanuda audio+vídeo en el mismo frame
             }
             else
             {
-                // No hay vídeo, o el vídeo ya está ON -> arranca solo el audio
                 if (audioSource.clip != null && audioSource.time >= audioSource.clip.length - 0.0001f)
                     audioSource.time = 0f;
                 audioSource.Play();
             }
+            ClearPendingTime();
         }
 
         RefreshPlayIcon();
@@ -314,28 +309,22 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         bool videoPlaying = videoActive && vp != null && vp.isPrepared && vp.isPlaying;
         bool audioPlaying = audioSource.isPlaying;
 
-        // Si cualquiera está reproduciendo -> pausar ambos
         if (audioPlaying || videoPlaying)
         {
             audioSource.Pause();
+            pendingPausedTime = audioSource.time; // guarda donde nos quedamos
             if (videoActive && vp != null) vp.Pause();
             RefreshPlayIcon();
-            // NUEVO: notificar pausa inmediata
             UpdateLastPlayingAndBroadcast();
             UpdateVinylSpin();
             return;
         }
 
-        // Si ambos están en pausa -> reanudar sincronizados
-        if (songLoader != null)
-        {
-            // Reproduce audio y vídeo (o vinilo) en el MISMO frame.
-            songLoader.StartPlayback();
-        }
-        else
-        {
-            audioSource.Play();
-        }
+        // Ambos estaban en pausa -> reanudar sincronizados
+        if (pendingPausedTime >= 0f) audioSource.time = pendingPausedTime;
+        if (songLoader != null) songLoader.StartPlayback();
+        else audioSource.Play();
+        ClearPendingTime();
 
         RefreshPlayIcon();
         UpdateLastPlayingAndBroadcast();
@@ -394,7 +383,8 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (progressBar == null || audioSource == null || audioSource.clip == null) return;
         float dur = Mathf.Max(0.0001f, EffectiveDurationSec());
-        float norm = Mathf.Clamp01(audioSource.time / dur);
+        float t = GetDisplayedTime();
+        float norm = Mathf.Clamp01(t / dur);
         progressBar.value = norm;
         UpdateGripPosition(progressBar.value);
     }
@@ -421,43 +411,43 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (InputLock.IsLocked || audioSource == null || audioSource.clip == null) return;
 
-        float newTime = audioSource.time + seconds;
+        float baseTime = GetDisplayedTime();   // usa el tiempo mostrado si estamos en pausa
+        float target = baseTime + seconds;
 
-        // Si nos pasamos del final, invocar transición a Next
-        if (newTime >= audioSource.clip.length - 0.001f)
+        // Si no es modo Normal+última pista, puedes permitir transición; si no, clamp
+        if (target >= audioSource.clip.length - 0.001f)
         {
-            if (transition != null) { transition.GoToNext(); return; }
-            newTime = 0f; // Fallback si no hay transición
+            if (queueManager != null && queueManager.playMode != PlayMode.Normal)
+            {
+                if (transition != null) { transition.GoToNext(); return; }
+                target = 0f;
+            }
         }
-        else if (newTime < 0f) newTime = 0f;
+        else if (target < 0f) target = 0f;
 
-        JumpTime(newTime);
+        JumpTime(target);
+        // Mantiene el estado (si estaba en pausa, sigue en pausa; si estaba reproduciendo, sigue reproduciendo)
     }
 
     public void JumpTime(float newTime)
     {
         if (audioSource == null || audioSource.clip == null) return;
 
-        // Clampear a la duración efectiva (en LoopOne+Loop, el final es 'end')
-        float dur = EffectiveDurationSec();
-        float t = Mathf.Clamp(newTime, 0f, Mathf.Max(0f, dur));
-
-        audioSource.time = t;
+        SetPendingTime(newTime, true);
 
         UpdateProgressBar();
 
-        if (currentTimeText != null) currentTimeText.text = FormatTime(audioSource.time);
+        if (currentTimeText != null) currentTimeText.text = FormatTime(GetDisplayedTime());
 
         if (showCountdown && durationText != null)
         {
-            float remainingTime = Mathf.Max(0f, dur - audioSource.time);
+            float dur = EffectiveDurationSec();
+            float remainingTime = Mathf.Max(0f, dur - GetDisplayedTime());
             durationText.text = "-" + FormatTime(remainingTime);
         }
 
-        // Asegura vinilo coherente
         UpdateVinylSpin();
 
-        // Avisar al pulso para realinear con el tiempo actual
         if (songLoader != null && songLoader.beatPulseUI != null)
             songLoader.beatPulseUI.RealignToSongTime();
     }
@@ -561,88 +551,25 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (audioSource == null || audioSource.clip == null) return;
 
-        float len = audioSource.clip.length;
-        const float endEpsilon = 0.02f; // ~20 ms
-        var mode = (queueManager != null) ? queueManager.playMode : PlayMode.Normal;
+        bool wasPlaying = audioSource.isPlaying;
 
-        // Estado previo
-        bool audioWasPlaying = audioSource.isPlaying;
-        bool videoActive = (songLoader != null && songLoader.videoContainer != null && songLoader.videoContainer.activeSelf);
-        var vp = (songLoader != null) ? songLoader.videoPlayer : null;
-        bool videoWasPlaying = videoActive && vp != null && vp.isPrepared && vp.isPlaying;
-        bool bothWereOff = (!audioWasPlaying && !videoWasPlaying);
+        SetPendingTime(newTime, true);
 
-        bool atEnd = newTime >= len - endEpsilon;
-
-        if (atEnd)
+        // Mantener el estado previo
+        if (wasPlaying)
         {
-            if (mode == PlayMode.RepeatOne)
-            {
-                if (audioWasPlaying)
-                {
-                    // Veníamos reproduciendo -> loop inmediato
-                    RestartCurrentNoTransition();
-                }
-                else
-                {
-                    // Veníamos en pausa (incluye bothWereOff): ir a 0:00 y MANTENER pausa
-                    audioSource.time = 0f;
-                    if (vp != null) vp.Pause();
-
-                    UpdateProgressBar();
-                    if (currentTimeText != null) currentTimeText.text = FormatTime(audioSource.time);
-                    if (showCountdown && durationText != null)
-                    {
-                        float remainingTime = len - audioSource.time;
-                        durationText.text = "-" + FormatTime(remainingTime);
-                    }
-                    UpdateVinylSpin();
-                    if (songLoader != null && songLoader.beatPulseUI != null)
-                        songLoader.beatPulseUI.RealignToSongTime();
-
-                    lastPlaying = false;
-                    RefreshPlayIcon();
-                }
-                return;
-            }
-
-            // NORMAL + última pista: parar y volver a 0
-            if (mode == PlayMode.Normal && queueManager != null && queueManager.IsLastIndex())
-            {
-                audioSource.Stop();
-                JumpTime(0f);
-                RefreshPlayIcon();
-                UpdateVinylSpin();
-                return;
-            }
-
-            // Otros modos: dejar justo antes del final
-            newTime = Mathf.Max(0f, len - 0.01f);
-        }
-
-        // Seek estándar
-        audioSource.time = newTime;
-
-        // Política post-seek:
-        if (audioWasPlaying)
-        {
-            // Si veníamos reproduciendo, seguimos reproduciendo
             if (!audioSource.isPlaying) audioSource.Play();
-        }
-        else
-        {
-            // Veníamos en pausa (incluye bothWereOff): mantener PAUSA
-            if (audioSource.isPlaying) audioSource.Pause();
-            // No tocamos el estado del vídeo: si estaba en pausa, sigue en pausa; si estaba ON, sigue ON.
+            ClearPendingTime(); // a partir de ahora el motor avanza el tiempo
         }
 
-        // Refrescos UI
+        // Refresco UI inmediato
         UpdateProgressBar();
-        if (currentTimeText != null) currentTimeText.text = FormatTime(audioSource.time);
+        if (currentTimeText != null) currentTimeText.text = FormatTime(GetDisplayedTime());
         if (showCountdown && durationText != null)
         {
-            float remainingTime = len - audioSource.time;
-            durationText.text = "-" + FormatTime(remainingTime);
+            float dur = EffectiveDurationSec();
+            float remaining = Mathf.Max(0f, dur - GetDisplayedTime());
+            durationText.text = "-" + FormatTime(remaining);
         }
 
         lastPlaying = audioSource.isPlaying;
@@ -754,11 +681,11 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
     {
         if (clip == null) return;
 
-        // Reset progreso y tiempo actual
+        pendingPausedTime = 0f; // nueva pista: el tiempo mostrado/seek parte de 0
+
         if (progressBar) { progressBar.value = 0f; UpdateGripPosition(0f); }
         if (currentTimeText) currentTimeText.text = "0:00";
 
-        // Duración mostrada según modo (LoopOne+Loop -> end)
         if (durationText)
         {
             float dur = EffectiveDurationSec();
@@ -824,6 +751,34 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         bool cur = (audioSource != null && audioSource.isPlaying);
         lastPlaying = cur;
         OnGlobalPlaybackStateChanged?.Invoke(cur); // ← notifica a los GIFs
+    }
+
+    private void PauseAndResetToStart()
+    {
+        if (audioSource == null || audioSource.clip == null) return;
+
+        audioSource.Pause();
+        pendingPausedTime = 0f;          // la UI y los siguientes seeks parten de 0
+        audioSource.time = 0f;           // intentamos reflejarlo también en el engine
+
+        // UI coherente
+        UpdateProgressBar();
+        if (currentTimeText != null) currentTimeText.text = "0:00";
+
+        if (durationText != null)
+        {
+            float dur = EffectiveDurationSec();
+            if (showCountdown)
+                durationText.text = "-" + FormatTime(Mathf.Max(0f, dur - GetDisplayedTime()));
+            else
+                durationText.text = FormatTime(dur);
+        }
+
+        RefreshPlayIcon();
+        UpdateVinylSpin();
+        UpdateLastPlayingAndBroadcast();
+        if (songLoader != null && songLoader.beatPulseUI != null)
+            songLoader.beatPulseUI.RealignToSongTime();
     }
 
     /* ====================== Vinilo: sync con Play/Pause y vídeo ====================== */
@@ -1015,6 +970,42 @@ public class MusicPlayer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndD
         }
 
         return false;
+    }
+
+    // TEST
+
+    // === Gestión de tiempo en pausa ===
+    // -1f == sin tiempo pendiente (usar engine)
+    private float pendingPausedTime = -1f;
+
+    private float GetDisplayedTime()
+    {
+        if (audioSource == null || audioSource.clip == null) return 0f;
+        if (audioSource.isPlaying) return SafeAudioTime();
+        if (pendingPausedTime >= 0f) return Mathf.Clamp(pendingPausedTime, 0f, EffectiveDurationSec());
+        return Mathf.Clamp(audioSource.time, 0f, EffectiveDurationSec());
+    }
+
+    // Evita caer exactamente en el final para no reactivar lógica de fin de pista
+    private float ClampPlayableTime(float t)
+    {
+        if (audioSource == null || audioSource.clip == null) return 0f;
+        float dur = Mathf.Max(0f, EffectiveDurationSec());
+        if (dur <= 0.02f) return 0f;
+        return Mathf.Clamp(t, 0f, dur - 0.01f);
+    }
+
+    private void SetPendingTime(float t, bool applyToAudio)
+    {
+        float tt = ClampPlayableTime(t);
+        pendingPausedTime = tt;
+        if (applyToAudio && audioSource != null && audioSource.clip != null)
+            audioSource.time = tt; // algunos drivers lo ignorarán en pausa; mantenemos el 'pending' como verdad
+    }
+
+    private void ClearPendingTime()
+    {
+        pendingPausedTime = -1f;
     }
 
 }
